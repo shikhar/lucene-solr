@@ -17,6 +17,8 @@ package org.apache.lucene.util;
  * limitations under the License.
  */
 
+import java.util.Iterator;
+
 /** A PriorityQueue maintains a partial ordering of its elements such that the
  * least element can always be found in constant time.  Put()'s and pop()'s
  * require log(size) time.
@@ -28,7 +30,7 @@ package org.apache.lucene.util;
  * 
  * @lucene.internal
 */
-public abstract class PriorityQueue<T> {
+public abstract class PriorityQueue<T> implements Iterable<T> {
   private int size;
   private final int maxSize;
   private final T[] heap;
@@ -261,5 +263,34 @@ public abstract class PriorityQueue<T> {
    */
   protected final Object[] getHeapArray() {
     return (Object[]) heap;
+  }
+
+  /**
+   * Provides an iterator over the contents of this queue.
+   *
+   * If you need entries in sorted order, you should use {@link #pop()} instead.
+   *
+   * @return an iterator over this queue's entries, not necessarily in sorted order
+   */
+  @Override
+  public Iterator<T> iterator() {
+    return new Iterator<T>() {
+      int offset = 1;
+
+      @Override
+      public boolean hasNext() {
+        return offset <= size;
+      }
+
+      @Override
+      public T next() {
+        return heap[offset++];
+      }
+
+      @Override
+      public void remove() {
+        throw new UnsupportedOperationException();
+      }
+    };
   }
 }

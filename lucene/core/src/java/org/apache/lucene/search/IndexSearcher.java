@@ -444,34 +444,7 @@ public class IndexSearcher {
       throw new IllegalArgumentException("after.doc exceeds the number of documents in that reader: after.doc="
           + after.doc + " limit=" + limit);
     }
-    nDocs = Math.min(nDocs, limit);
-
-    if (executor == null) {
-      return search(leafContexts, weight, after, nDocs);
-    } else {
-      final HitQueue hq = new HitQueue(nDocs, false);
-      final Lock lock = new ReentrantLock();
-      final ExecutionHelper<TopDocs> runner = new ExecutionHelper<TopDocs>(executor);
-
-      for (int i = 0; i < leafSlices.length; i++) { // search each sub
-        runner.submit(new SearcherCallableNoSort(lock, this, leafSlices[i], weight, after, nDocs, hq));
-      }
-
-      int totalHits = 0;
-      float maxScore = Float.NEGATIVE_INFINITY;
-      for (final TopDocs topDocs : runner) {
-        if(topDocs.totalHits != 0) {
-          totalHits += topDocs.totalHits;
-          maxScore = Math.max(maxScore, topDocs.getMaxScore());
-        }
-      }
-
-      final ScoreDoc[] scoreDocs = new ScoreDoc[hq.size()];
-      for (int i = hq.size() - 1; i >= 0; i--) // put docs in array
-        scoreDocs[i] = hq.pop();
-
-      return new TopDocs(totalHits, scoreDocs, maxScore);
-    }
+    return search(leafContexts, weight, after, Math.min(nDocs, limit));
   }
 
   /** Expert: Low-level search implementation.  Finds the top <code>n</code>
@@ -742,51 +715,6 @@ public class IndexSearcher {
   public IndexReaderContext getTopReaderContext() {
     return readerContext;
   }
-
-  /**
-   * A thread subclass for searching a single searchable
-   */
-  private static final class SearcherCallableNoSort implements Callable<TopDocs> {
-
-    private final Lock lock;
-    private final IndexSearcher searcher;
-    private final Weight weight;
-    private final ScoreDoc after;
-    private final int nDocs;
-    private final HitQueue hq;
-    private final LeafSlice slice;
-
-    public SearcherCallableNoSort(Lock lock, IndexSearcher searcher, LeafSlice slice,  Weight weight,
-        ScoreDoc after, int nDocs, HitQueue hq) {
-      this.lock = lock;
-      this.searcher = searcher;
-      this.weight = weight;
-      this.after = after;
-      this.nDocs = nDocs;
-      this.hq = hq;
-      this.slice = slice;
-    }
-
-    @Override
-    public TopDocs call() throws IOException {
-      final TopDocs docs = searcher.search(Arrays.asList(slice.leaves), weight, after, nDocs);
-      final ScoreDoc[] scoreDocs = docs.scoreDocs;
-      //it would be so nice if we had a thread-safe insert
-      lock.lock();
-      try {
-        for (int j = 0; j < scoreDocs.length; j++) { // merge scoreDocs into hq
-          final ScoreDoc scoreDoc = scoreDocs[j];
-          if (scoreDoc == hq.insertWithOverflow(scoreDoc)) {
-            break;
-          }
-        }
-      } finally {
-        lock.unlock();
-      }
-      return docs;
-    }
-  }
-
 
   /**
    * A thread subclass for searching a single searchable
