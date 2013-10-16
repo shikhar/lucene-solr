@@ -60,6 +60,7 @@ import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.SerialCollector;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.SortField.Type;
@@ -746,7 +747,7 @@ public class TestDrillSideways extends FacetTestCase {
       // had an AssertingScorer it could catch it when
       // Weight.scoresDocsOutOfOrder lies!:
       new DrillSideways(s, tr).search(ddq,
-                           new Collector() {
+                           new SerialCollector() {
                              int lastDocID;
 
                              @Override

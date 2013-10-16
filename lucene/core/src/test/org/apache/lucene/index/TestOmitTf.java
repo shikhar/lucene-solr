@@ -34,6 +34,7 @@ import org.apache.lucene.search.Explanation;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.PhraseQuery;
 import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.SerialCollector;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TermStatistics;
 import org.apache.lucene.search.similarities.TFIDFSimilarity;
@@ -414,7 +415,7 @@ public class TestOmitTf extends LuceneTestCase {
     dir.close();
   }
      
-  public static class CountingHitCollector extends Collector {
+  public static class CountingHitCollector extends SerialCollector {
     static int count=0;
     static int sum=0;
     private int docBase = -1;

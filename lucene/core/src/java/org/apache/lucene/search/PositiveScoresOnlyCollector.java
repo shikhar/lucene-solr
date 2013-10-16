@@ -26,38 +26,31 @@ import org.apache.lucene.index.AtomicReaderContext;
  * {@link Collector} and makes sure only documents with
  * scores &gt; 0 are collected.
  */
-public class PositiveScoresOnlyCollector extends Collector {
+public class PositiveScoresOnlyCollector extends WrappingCollector {
 
-  final private Collector c;
-  private Scorer scorer;
-  
   public PositiveScoresOnlyCollector(Collector c) {
-    this.c = c;
-  }
-  
-  @Override
-  public void collect(int doc) throws IOException {
-    if (scorer.score() > 0) {
-      c.collect(doc);
-    }
+    super(c);
   }
 
   @Override
-  public void setNextReader(AtomicReaderContext context) throws IOException {
-    c.setNextReader(context);
-  }
+  public WrappingSubCollector subCollector(AtomicReaderContext context) throws IOException {
+    return new WrappingSubCollector(delegate.subCollector(context)) {
+      Scorer scorer;
 
-  @Override
-  public void setScorer(Scorer scorer) throws IOException {
-    // Set a ScoreCachingWrappingScorer in case the wrapped Collector will call
-    // score() also.
-    this.scorer = new ScoreCachingWrappingScorer(scorer);
-    c.setScorer(this.scorer);
-  }
+      @Override
+      public void setScorer(Scorer scorer) throws IOException {
+        // Set a ScoreCachingWrappingScorer in case the wrapped Collector will call score() also.
+        delegate.setScorer(this.scorer = new ScoreCachingWrappingScorer(scorer));
+      }
 
-  @Override
-  public boolean acceptsDocsOutOfOrder() {
-    return c.acceptsDocsOutOfOrder();
+      @Override
+      public void collect(int doc) throws IOException {
+        if (scorer.score() > 0) {
+          delegate.collect(doc);
+        }
+      }
+
+    };
   }
 
 }

@@ -30,6 +30,7 @@ import org.apache.lucene.search.Explanation;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.SubCollector;
 import org.apache.lucene.search.Weight;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
@@ -204,7 +205,7 @@ class TermsIncludingScoreQuery extends Query {
     }
 
     @Override
-    public void score(Collector collector) throws IOException {
+    public void score(SubCollector collector) throws IOException {
       collector.setScorer(this);
       for (int doc = nextDocOutOfOrder(); doc != NO_MORE_DOCS; doc = nextDocOutOfOrder()) {
         collector.collect(doc);

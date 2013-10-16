@@ -63,6 +63,7 @@ import org.apache.lucene.search.PrefixQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.SerialCollector;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.suggest.Lookup.LookupResult; // javadocs
@@ -541,7 +542,7 @@ public class AnalyzingInfixSuggester extends Lookup implements Closeable {
     }
   }
 
-  private static class FirstNDocsCollector extends Collector {
+  private static class FirstNDocsCollector extends SerialCollector {
     private int docBase;
     private final int[] hits;
     private int hitCount;

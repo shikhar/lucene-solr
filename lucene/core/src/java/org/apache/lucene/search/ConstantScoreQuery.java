@@ -222,36 +222,36 @@ public class ConstantScoreQuery extends Query {
       return docIdSetIterator.cost();
     }
 
-    private Collector wrapCollector(final Collector collector) {
-      return new Collector() {
+    private SubCollector wrapSubCollector(final SubCollector subCollector) {
+      return new SubCollector() {
         @Override
         public void setScorer(Scorer scorer) throws IOException {
           // we must wrap again here, but using the scorer passed in as parameter:
-          collector.setScorer(new ConstantScorer(scorer, ConstantScorer.this.weight, ConstantScorer.this.theScore));
+          subCollector.setScorer(new ConstantScorer(scorer, ConstantScorer.this.weight, ConstantScorer.this.theScore));
         }
         
         @Override
         public void collect(int doc) throws IOException {
-          collector.collect(doc);
+          subCollector.collect(doc);
         }
-        
+
         @Override
-        public void setNextReader(AtomicReaderContext context) throws IOException {
-          collector.setNextReader(context);
+        public void done() throws IOException {
+          subCollector.done();
         }
-        
+
         @Override
         public boolean acceptsDocsOutOfOrder() {
-          return collector.acceptsDocsOutOfOrder();
+          return subCollector.acceptsDocsOutOfOrder();
         }
       };
     }
 
     // this optimization allows out of order scoring as top scorer!
     @Override
-    public void score(Collector collector) throws IOException {
+    public void score(SubCollector collector) throws IOException {
       if (query != null) {
-        ((Scorer) docIdSetIterator).score(wrapCollector(collector));
+        ((Scorer) docIdSetIterator).score(wrapSubCollector(collector));
       } else {
         super.score(collector);
       }
@@ -259,9 +259,9 @@ public class ConstantScoreQuery extends Query {
 
     // this optimization allows out of order scoring as top scorer,
     @Override
-    public boolean score(Collector collector, int max, int firstDocID) throws IOException {
+    public boolean score(SubCollector collector, int max, int firstDocID) throws IOException {
       if (query != null) {
-        return ((Scorer) docIdSetIterator).score(wrapCollector(collector), max, firstDocID);
+        return ((Scorer) docIdSetIterator).score(wrapSubCollector(collector), max, firstDocID);
       } else {
         return super.score(collector, max, firstDocID);
       }

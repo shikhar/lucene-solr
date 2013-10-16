@@ -123,7 +123,7 @@ public class CheckHits {
   /**
    * Just collects document ids into a set.
    */
-  public static class SetCollector extends Collector {
+  public static class SetCollector extends SerialCollector {
     final Set<Integer> bag;
     public SetCollector(Set<Integer> bag) {
       this.bag = bag;
@@ -464,7 +464,7 @@ public class CheckHits {
    *
    * @see CheckHits#verifyExplanation
    */
-  public static class ExplanationAsserter extends Collector {
+  public static class ExplanationAsserter extends SerialCollector {
 
     Query q;
     IndexSearcher s;

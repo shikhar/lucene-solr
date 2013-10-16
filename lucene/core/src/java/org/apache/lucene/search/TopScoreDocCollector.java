@@ -34,7 +34,7 @@ import org.apache.lucene.index.AtomicReaderContext;
  * collector will not properly collect hits with such
  * scores.
  */
-public abstract class TopScoreDocCollector extends TopDocsCollector<ScoreDoc> {
+public abstract class TopScoreDocCollector extends TopDocsSerialCollector<ScoreDoc> {
 
   // Assumes docs are scored in order.
   private static class InOrderTopScoreDocCollector extends TopScoreDocCollector {

@@ -33,7 +33,7 @@ import java.util.*;
  *
  * @lucene.experimental
  */
-abstract public class AbstractFirstPassGroupingCollector<GROUP_VALUE_TYPE> extends Collector {
+abstract public class AbstractFirstPassGroupingCollector<GROUP_VALUE_TYPE> extends SerialCollector {
 
   private final Sort groupSort;
   private final FieldComparator<?>[] comparators;

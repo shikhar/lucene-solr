@@ -188,26 +188,27 @@ public class TestBooleanOr extends LuceneTestCase {
 
     final FixedBitSet hits = new FixedBitSet(docCount);
     final AtomicInteger end = new AtomicInteger();
-    Collector c = new Collector() {
-        @Override
-        public void setNextReader(AtomicReaderContext sub) {
-        }
+    SubCollector c = new SubCollector() {
 
-        @Override
-        public void collect(int doc) {
-          assertTrue("collected doc=" + doc + " beyond max=" + end, doc < end.intValue());
-          hits.set(doc);
-        }
+      @Override
+      public void collect(int doc) {
+        assertTrue("collected doc=" + doc + " beyond max=" + end, doc < end.intValue());
+        hits.set(doc);
+      }
 
-        @Override
-        public void setScorer(Scorer scorer) {
-        }
+      @Override
+      public void done() throws IOException {
+      }
 
-        @Override
-        public boolean acceptsDocsOutOfOrder() {
-          return true;
-        }
-      };
+      @Override
+      public void setScorer(Scorer scorer) {
+      }
+
+      @Override
+      public boolean acceptsDocsOutOfOrder() {
+        return true;
+      }
+    };
 
     while (end.intValue() < docCount) {
       final int inc = _TestUtil.nextInt(random(), 1, 1000);

@@ -19,6 +19,7 @@ package org.apache.lucene.search.grouping;
 
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.SerialCollector;
 import org.apache.lucene.util.BytesRef;
 
 import java.io.IOException;
@@ -36,7 +37,7 @@ import java.util.Collection;
  *
  * @lucene.experimental
  */
-public abstract class AbstractAllGroupsCollector<GROUP_VALUE_TYPE> extends Collector {
+public abstract class AbstractAllGroupsCollector<GROUP_VALUE_TYPE> extends SerialCollector {
 
   /**
    * Returns the total number of groups for the executed search.

@@ -392,40 +392,6 @@ public class CollapsingQParserPlugin extends QParserPlugin {
       }
     }
 
-    public boolean acceptsDocsOutOfOrder() {
-      //Documents must be sent in order to this collector.
-      return false;
-    }
-
-    public void setNextReader(AtomicReaderContext context) throws IOException {
-      this.contexts[context.ord] = context;
-      this.docBase = context.docBase;
-    }
-
-    public void collect(int docId) throws IOException {
-      int globalDoc = docId+this.docBase;
-      int ord = values.getOrd(globalDoc);
-      if(ord > -1) {
-        float score = scorer.score();
-        if(score > scores[ord]) {
-          ords[ord] = globalDoc;
-          scores[ord] = score;
-        }
-      } else if (this.collapsedSet.fastGet(globalDoc)) {
-        //The doc is elevated so score does not matter
-        //We just want to be sure it doesn't fall into the null policy
-      } else if(nullPolicy == CollapsingPostFilter.NULL_POLICY_COLLAPSE) {
-        float score = scorer.score();
-        if(score > nullScore) {
-          nullScore = score;
-          nullDoc = globalDoc;
-        }
-      } else if(nullPolicy == CollapsingPostFilter.NULL_POLICY_EXPAND) {
-        collapsedSet.fastSet(globalDoc);
-        nullScores.add(scorer.score());
-      }
-    }
-
     public void finish() throws IOException {
       if(contexts.length == 0) {
         return;
@@ -442,43 +408,94 @@ public class CollapsingQParserPlugin extends QParserPlugin {
         }
       }
 
-      int currentContext = 0;
-      int currentDocBase = 0;
-      int nextDocBase = currentContext+1 < contexts.length ? contexts[currentContext+1].docBase : maxDoc;
-      delegate.setNextReader(contexts[currentContext]);
-      DummyScorer dummy = new DummyScorer();
-      delegate.setScorer(dummy);
-      DocIdSetIterator it = collapsedSet.iterator();
-      int docId = -1;
+      final DocIdSetIterator it = collapsedSet.iterator();
       int nullScoreIndex = 0;
-      while((docId = it.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
+      for (int currentContext = 0; currentContext < contexts.length; currentContext++) {
+        final int currentDocBase = contexts[currentContext].docBase;
+        final int nextDocBase = (currentContext + 1 < contexts.length)
+            ? contexts[currentContext + 1].docBase
+            : DocIdSetIterator.NO_MORE_DOCS;
 
-        int ord = values.getOrd(docId);
-        if(ord > -1) {
-          dummy.score = scores[ord];
-        } else if(this.boostDocs != null && boostDocs.contains(docId)) {
-          //Elevated docs don't need a score.
-          dummy.score = 0F;
-        } else if (nullPolicy == CollapsingPostFilter.NULL_POLICY_COLLAPSE) {
-          dummy.score = nullScore;
-        } else if(nullPolicy == CollapsingPostFilter.NULL_POLICY_EXPAND) {
-          dummy.score = nullScores.get(nullScoreIndex++);
+        final DummyScorer dummy = new DummyScorer();
+        final SubCollector delegateSub = delegate.subCollector(contexts[currentContext]);
+        delegateSub.setScorer(dummy);
+
+        int docId;
+        while ((docId = it.nextDoc()) < nextDocBase) {
+          int ord = values.getOrd(docId);
+          if (ord > -1) {
+            dummy.score = scores[ord];
+          } else if(this.boostDocs != null && boostDocs.contains(docId)) {
+            //Elevated docs don't need a score.
+            dummy.score = 0F;
+          } else if (nullPolicy == CollapsingPostFilter.NULL_POLICY_COLLAPSE) {
+            dummy.score = nullScore;
+          } else if(nullPolicy == CollapsingPostFilter.NULL_POLICY_EXPAND) {
+            dummy.score = nullScores.get(nullScoreIndex++);
+          }
+          delegateSub.collect(docId - currentDocBase);
         }
 
-        while(docId >= nextDocBase) {
-          currentContext++;
-          currentDocBase = contexts[currentContext].docBase;
-          nextDocBase = currentContext+1 < contexts.length ? contexts[currentContext+1].docBase : maxDoc;
-          delegate.setNextReader(contexts[currentContext]);
-        }
-
-        int contextDoc = docId-currentDocBase;
-        delegate.collect(contextDoc);
+        delegateSub.done();
       }
 
       if(delegate instanceof DelegatingCollector) {
         ((DelegatingCollector) delegate).finish();
       }
+    }
+
+    @Override
+    public SubCollector subCollector(AtomicReaderContext context) throws IOException {
+      this.contexts[context.ord] = context;
+      this.docBase = context.docBase;
+
+      return new SubCollector() {
+
+        Scorer scorer;
+
+        @Override
+        public void setScorer(Scorer scorer) throws IOException {
+          this.scorer = scorer;
+        }
+
+        public void collect(int docId) throws IOException {
+          int globalDoc = docId+docBase;
+          int ord = values.getOrd(globalDoc);
+          if(ord > -1) {
+            float score = scorer.score();
+            if(score > scores[ord]) {
+              ords[ord] = globalDoc;
+              scores[ord] = score;
+            }
+          } else if (collapsedSet.fastGet(globalDoc)) {
+            //The doc is elevated so score does not matter
+            //We just want to be sure it doesn't fall into the null policy
+          } else if(nullPolicy == CollapsingPostFilter.NULL_POLICY_COLLAPSE) {
+            float score = scorer.score();
+            if(score > nullScore) {
+              nullScore = score;
+              nullDoc = globalDoc;
+            }
+          } else if(nullPolicy == CollapsingPostFilter.NULL_POLICY_EXPAND) {
+            collapsedSet.fastSet(globalDoc);
+            nullScores.add(scorer.score());
+          }
+        }
+
+        @Override
+        public void done() throws IOException {
+        }
+
+        public boolean acceptsDocsOutOfOrder() {
+          //Documents must be sent in order to this collector.
+          return false;
+        }
+      };
+    }
+
+    @Override
+    public boolean isParallelizable() {
+      return false;
     }
   }
 
@@ -523,74 +540,87 @@ public class CollapsingQParserPlugin extends QParserPlugin {
       }
     }
 
-    public boolean acceptsDocsOutOfOrder() {
-      //Documents must be sent in order to this collector.
-      return false;
-    }
-
-    public void setScorer(Scorer scorer) {
-      this.fieldValueCollapse.setScorer(scorer);
-    }
-
-    public void setNextReader(AtomicReaderContext context) throws IOException {
-      this.contexts[context.ord] = context;
-      this.docBase = context.docBase;
-      this.fieldValueCollapse.setNextReader(context);
-    }
-
-    public void collect(int docId) throws IOException {
-      int globalDoc = docId+this.docBase;
-      int ord = values.getOrd(globalDoc);
-      fieldValueCollapse.collapse(ord, docId, globalDoc);
-    }
-
     public void finish() throws IOException {
       if(contexts.length == 0) {
         return;
       }
 
-      int currentContext = 0;
-      int currentDocBase = 0;
-      int nextDocBase = currentContext+1 < contexts.length ? contexts[currentContext+1].docBase : maxDoc;
-      delegate.setNextReader(contexts[currentContext]);
-      DummyScorer dummy = new DummyScorer();
-      delegate.setScorer(dummy);
-      DocIdSetIterator it = fieldValueCollapse.getCollapsedSet().iterator();
-      int docId = -1;
+      final float[] scores = fieldValueCollapse.getScores();
+      final FloatArrayList nullScores = fieldValueCollapse.getNullScores();
+      final float nullScore = fieldValueCollapse.getNullScore();
+      final DocIdSetIterator it = fieldValueCollapse.getCollapsedSet().iterator();
       int nullScoreIndex = 0;
-      float[] scores = fieldValueCollapse.getScores();
-      FloatArrayList nullScores = fieldValueCollapse.getNullScores();
-      float nullScore = fieldValueCollapse.getNullScore();
-      while((docId = it.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
+      for (int currentContext = 0; currentContext < contexts.length; currentContext++) {
 
-        if(this.needsScores){
-          int ord = values.getOrd(docId);
-          if(ord > -1) {
-            dummy.score = scores[ord];
-          } else if (boostDocs != null && boostDocs.contains(docId)) {
-            //Its an elevated doc so no score is needed
-            dummy.score = 0F;
-          } else if (nullPolicy == CollapsingPostFilter.NULL_POLICY_COLLAPSE) {
-            dummy.score = nullScore;
-          } else if(nullPolicy == CollapsingPostFilter.NULL_POLICY_EXPAND) {
-            dummy.score = nullScores.get(nullScoreIndex++);
+        final int currentDocBase = contexts[currentContext].docBase;
+        final int nextDocBase = (currentContext + 1 < contexts.length)
+            ? contexts[currentContext + 1].docBase
+            : DocIdSetIterator.NO_MORE_DOCS;
+
+        final SubCollector delegateSub = delegate.subCollector(contexts[currentContext]);
+        final DummyScorer dummy = new DummyScorer();
+        delegateSub.setScorer(dummy);
+
+        int docId;
+        while ((docId = it.nextDoc()) < nextDocBase) {
+          if(this.needsScores){
+            int ord = values.getOrd(docId);
+            if(ord > -1) {
+              dummy.score = scores[ord];
+            } else if (boostDocs != null && boostDocs.contains(docId)) {
+              //Its an elevated doc so no score is needed
+              dummy.score = 0F;
+            } else if (nullPolicy == CollapsingPostFilter.NULL_POLICY_COLLAPSE) {
+              dummy.score = nullScore;
+            } else if(nullPolicy == CollapsingPostFilter.NULL_POLICY_EXPAND) {
+              dummy.score = nullScores.get(nullScoreIndex++);
+            }
           }
+          delegateSub.collect(docId-currentDocBase);
         }
 
-        while(docId >= nextDocBase) {
-          currentContext++;
-          currentDocBase = contexts[currentContext].docBase;
-          nextDocBase = currentContext+1 < contexts.length ? contexts[currentContext+1].docBase : maxDoc;
-          delegate.setNextReader(contexts[currentContext]);
-        }
-
-        int contextDoc = docId-currentDocBase;
-        delegate.collect(contextDoc);
+        delegateSub.done();
       }
 
       if(delegate instanceof DelegatingCollector) {
         ((DelegatingCollector) delegate).finish();
       }
+    }
+
+    @Override
+    public SubCollector subCollector(AtomicReaderContext context) throws IOException {
+      this.contexts[context.ord] = context;
+      this.docBase = context.docBase;
+      this.fieldValueCollapse.setNextReader(context);
+
+      return new SubCollector() {
+        @Override
+        public void setScorer(Scorer scorer) throws IOException {
+          fieldValueCollapse.setScorer(scorer);
+        }
+
+        @Override
+        public void collect(int docId) throws IOException {
+          int globalDoc = docId+docBase;
+          int ord = values.getOrd(globalDoc);
+          fieldValueCollapse.collapse(ord, docId, globalDoc);
+        }
+
+        @Override
+        public void done() throws IOException {
+        }
+
+        @Override
+        public boolean acceptsDocsOutOfOrder() {
+          //Documents must be sent in order to this collector.
+          return false;
+        }
+      };
+    }
+
+    @Override
+    public boolean isParallelizable() {
+      return false;
     }
   }
 

@@ -36,8 +36,8 @@ public class AssertingScorer extends Scorer {
     YES, NO, UNKNOWN;
   }
 
-  private static final VirtualMethod<Scorer> SCORE_COLLECTOR = new VirtualMethod<Scorer>(Scorer.class, "score", Collector.class);
-  private static final VirtualMethod<Scorer> SCORE_COLLECTOR_RANGE = new VirtualMethod<Scorer>(Scorer.class, "score", Collector.class, int.class, int.class);
+  private static final VirtualMethod<Scorer> SCORE_COLLECTOR = new VirtualMethod<Scorer>(Scorer.class, "score", SubCollector.class);
+  private static final VirtualMethod<Scorer> SCORE_COLLECTOR_RANGE = new VirtualMethod<Scorer>(Scorer.class, "score", SubCollector.class, int.class, int.class);
 
   // we need to track scorers using a weak hash map because otherwise we
   // could loose references because of eg.
@@ -117,7 +117,7 @@ public class AssertingScorer extends Scorer {
   }
 
   @Override
-  public void score(Collector collector) throws IOException {
+  public void score(SubCollector collector) throws IOException {
     assert topScorer != TopScorer.NO;
     if (SCORE_COLLECTOR.isOverriddenAsOf(this.in.getClass())) {
       if (random.nextBoolean()) {
@@ -138,7 +138,7 @@ public class AssertingScorer extends Scorer {
   }
 
   @Override
-  public boolean score(Collector collector, int max, int firstDocID) throws IOException {
+  public boolean score(SubCollector collector, int max, int firstDocID) throws IOException {
     assert topScorer != TopScorer.NO;
     if (SCORE_COLLECTOR_RANGE.isOverriddenAsOf(this.in.getClass())) {
       return in.score(collector, max, firstDocID);

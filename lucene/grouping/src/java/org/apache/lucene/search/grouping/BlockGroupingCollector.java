@@ -54,7 +54,7 @@ import java.io.IOException;
  * @lucene.experimental
  */
 
-public class BlockGroupingCollector extends Collector {
+public class BlockGroupingCollector extends SerialCollector {
 
   private int[] pendingSubDocs;
   private float[] pendingSubScores;
@@ -338,16 +338,18 @@ public class BlockGroupingCollector extends Collector {
         collector = TopFieldCollector.create(withinGroupSort, maxDocsPerGroup, fillSortFields, needsScores, needsScores, true);
       }
 
-      collector.setScorer(fakeScorer);
-      collector.setNextReader(og.readerContext);
+      final SubCollector subCollector = collector.subCollector(og.readerContext);
+      subCollector.setScorer(fakeScorer);
       for(int docIDX=0;docIDX<og.count;docIDX++) {
         final int doc = og.docs[docIDX];
         fakeScorer.doc = doc;
         if (needsScores) {
           fakeScorer.score = og.scores[docIDX];
         }
-        collector.collect(doc);
+        subCollector.collect(doc);
       }
+      subCollector.done();
+
       totalGroupedHitCount += og.count;
 
       final Object[] groupSortValues;

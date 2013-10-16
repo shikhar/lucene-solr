@@ -28,7 +28,7 @@ import org.apache.lucene.util.LuceneTestCase;
 
 public class TestTopDocsCollector extends LuceneTestCase {
 
-  private static final class MyTopsDocCollector extends TopDocsCollector<ScoreDoc> {
+  private static final class MyTopsDocCollector extends TopDocsSerialCollector<ScoreDoc> {
 
     private int idx = 0;
     private int base = 0;

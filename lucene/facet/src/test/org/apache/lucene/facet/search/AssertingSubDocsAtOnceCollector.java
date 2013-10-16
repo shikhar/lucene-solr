@@ -24,10 +24,12 @@ import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.Scorer.ChildScorer;
 import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.SerialCollector;
+import org.apache.lucene.search.SubCollector;
 
 /** Verifies in collect() that all child subScorers are on
  *  the collected doc. */
-class AssertingSubDocsAtOnceCollector extends Collector {
+class AssertingSubDocsAtOnceCollector extends SerialCollector {
 
   // TODO: allow wrapping another Collector
 

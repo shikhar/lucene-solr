@@ -65,7 +65,7 @@ public class TestScoreCachingWrappingScorer extends LuceneTestCase {
     }
   }
   
-  private static final class ScoreCachingCollector extends Collector {
+  private static final class ScoreCachingCollector extends SerialCollector {
 
     private int idx = 0;
     private Scorer scorer;

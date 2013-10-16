@@ -11,6 +11,7 @@ import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.SerialCollector;
 import org.apache.lucene.util.ArrayUtil;
 import org.apache.lucene.util.FixedBitSet;
 
@@ -40,7 +41,7 @@ import org.apache.lucene.util.FixedBitSet;
  * 
  * @lucene.experimental
  */
-public abstract class FacetsCollector extends Collector {
+public abstract class FacetsCollector extends SerialCollector {
 
   private static final class DocsAndScoresCollector extends FacetsCollector {
 

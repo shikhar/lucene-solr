@@ -17,6 +17,7 @@ package org.apache.lucene.search;
  * limitations under the License.
  */
 
+import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.index.Term;
@@ -78,6 +79,7 @@ public class TestPositiveScoresOnlyCollector extends LuceneTestCase {
     
     Directory directory = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random(), directory);
+    writer.addDocument(new Document());
     writer.commit();
     IndexReader ir = writer.getReader();
     writer.close();
@@ -86,10 +88,12 @@ public class TestPositiveScoresOnlyCollector extends LuceneTestCase {
     Scorer s = new SimpleScorer(fake);
     TopDocsCollector<ScoreDoc> tdc = TopScoreDocCollector.create(scores.length, true);
     Collector c = new PositiveScoresOnlyCollector(tdc);
-    c.setScorer(s);
+    final SubCollector sub = c.subCollector(searcher.leafContexts.get(0));
+    sub.setScorer(s);
     while (s.nextDoc() != DocIdSetIterator.NO_MORE_DOCS) {
-      c.collect(0);
+      sub.collect(0);
     }
+    sub.done();
     TopDocs td = tdc.topDocs();
     ScoreDoc[] sd = td.scoreDocs;
     assertEquals(numPositiveScores, td.totalHits);

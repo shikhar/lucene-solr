@@ -23,9 +23,9 @@ import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.search.CollectionTerminatedException;
 import org.apache.lucene.search.Collector;
-import org.apache.lucene.search.Scorer;
-import org.apache.lucene.search.TopDocsCollector;
+import org.apache.lucene.search.SubCollector;
 import org.apache.lucene.search.TotalHitCountCollector;
+import org.apache.lucene.search.WrappingCollector;
 
 /**
  * A {@link Collector} that early terminates collection of documents on a
@@ -61,16 +61,10 @@ import org.apache.lucene.search.TotalHitCountCollector;
  * 
  * @lucene.experimental
  */
-public class EarlyTerminatingSortingCollector extends Collector {
+public class EarlyTerminatingSortingCollector extends WrappingCollector {
 
-  protected final Collector in;
   protected final Sorter sorter;
   protected final int numDocsToCollect;
-  
-  protected int segmentTotalCollect;
-  protected boolean segmentSorted;
-
-  private int numCollected;
 
   /**
    * Create a new {@link EarlyTerminatingSortingCollector} instance.
@@ -86,38 +80,46 @@ public class EarlyTerminatingSortingCollector extends Collector {
    *          hits.
    */
   public EarlyTerminatingSortingCollector(Collector in, Sorter sorter, int numDocsToCollect) {
+    super(in);
     if (numDocsToCollect <= 0) {
-      throw new IllegalStateException("numDocsToCollect must always be > 0, got " + segmentTotalCollect);
+      throw new IllegalStateException("numDocsToCollect must always be > 0, got " + numDocsToCollect);
     }
-    this.in = in;
     this.sorter = sorter;
     this.numDocsToCollect = numDocsToCollect;
   }
 
   @Override
-  public void setScorer(Scorer scorer) throws IOException {
-    in.setScorer(scorer);
+  public EarlyTerminatingSortingSubCollector subCollector(AtomicReaderContext context) throws IOException {
+    final boolean segmentSorted = SortingMergePolicy.isSorted(context.reader(), sorter);
+    final int segmentTotalCollect = segmentSorted ? numDocsToCollect : Integer.MAX_VALUE;
+    return new EarlyTerminatingSortingSubCollector(delegate.subCollector(context), segmentTotalCollect, segmentSorted);
   }
 
-  @Override
-  public void collect(int doc) throws IOException {
-    in.collect(doc);
-    if (++numCollected >= segmentTotalCollect) {
-      throw new CollectionTerminatedException();
+  protected static class EarlyTerminatingSortingSubCollector extends WrappingSubCollector {
+
+    final int segmentTotalCollect;
+    final boolean segmentSorted;
+
+    int numCollected;
+
+    public EarlyTerminatingSortingSubCollector(SubCollector delegate, int segmentTotalCollect, boolean segmentSorted) {
+      super(delegate);
+      this.segmentTotalCollect = segmentTotalCollect;
+      this.segmentSorted = segmentSorted;
     }
-  }
 
-  @Override
-  public void setNextReader(AtomicReaderContext context) throws IOException {
-    in.setNextReader(context);
-    segmentSorted = SortingMergePolicy.isSorted(context.reader(), sorter);
-    segmentTotalCollect = segmentSorted ? numDocsToCollect : Integer.MAX_VALUE;
-    numCollected = 0;
-  }
+    @Override
+    public void collect(int doc) throws IOException {
+      delegate.collect(doc);
+      if (++numCollected >= segmentTotalCollect) {
+        throw new CollectionTerminatedException();
+      }
+    }
 
-  @Override
-  public boolean acceptsDocsOutOfOrder() {
-    return !segmentSorted && in.acceptsDocsOutOfOrder();
-  }
+    @Override
+    public boolean acceptsDocsOutOfOrder() {
+      return !segmentSorted && delegate.acceptsDocsOutOfOrder();
+    }
 
+  }
 }

@@ -20,8 +20,6 @@ package org.apache.lucene.search;
 import java.io.IOException;
 
 import org.apache.lucene.index.AtomicReaderContext;
-import org.apache.lucene.search.Collector;
-import org.apache.lucene.search.Scorer;
 
 /**
  * A {@link Collector} which allows running a search with several
@@ -29,7 +27,7 @@ import org.apache.lucene.search.Scorer;
  * list of collectors and wraps them with {@link MultiCollector}, while
  * filtering out the <code>null</code> null ones.
  */
-public class MultiCollector extends Collector {
+public class MultiCollector implements Collector {
 
   /**
    * Wraps a list of {@link Collector}s with a {@link MultiCollector}. This
@@ -90,35 +88,72 @@ public class MultiCollector extends Collector {
     this.collectors = collectors;
   }
 
+  private static final class MultiSubCollector implements SubCollector {
+
+    private final SubCollector[] subCollectors;
+
+    private MultiSubCollector(SubCollector[] subCollectors) {
+      this.subCollectors = subCollectors;
+    }
+
+    @Override
+    public void setScorer(Scorer scorer) throws IOException {
+      for (SubCollector s: subCollectors) {
+        s.setScorer(scorer);
+      }
+    }
+
+    @Override
+    public void collect(int doc) throws IOException {
+      for (SubCollector s: subCollectors) {
+        s.collect(doc);
+      }
+    }
+
+    @Override
+    public void done() throws IOException {
+      for (SubCollector s: subCollectors) {
+        s.done();
+      }
+    }
+
+
+    @Override
+    public boolean acceptsDocsOutOfOrder() {
+      for (SubCollector s: subCollectors) {
+        if (!s.acceptsDocsOutOfOrder()) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+  }
+
   @Override
-  public boolean acceptsDocsOutOfOrder() {
-    for (Collector c : collectors) {
-      if (!c.acceptsDocsOutOfOrder()) {
+  public SubCollector subCollector(AtomicReaderContext context) throws IOException {
+    SubCollector[] subCollectors = new SubCollector[collectors.length];
+    for (int i = 0; i < collectors.length; i++) {
+      subCollectors[i] = collectors[i].subCollector(context);
+    }
+    return new MultiSubCollector(subCollectors);
+  }
+
+  @Override
+  public void setParallelized() {
+    for (Collector c: collectors) {
+      c.setParallelized();
+    }
+  }
+
+  @Override
+  public boolean isParallelizable() {
+    for (Collector c: collectors) {
+      if (!c.isParallelizable()) {
         return false;
       }
     }
     return true;
-  }
-
-  @Override
-  public void collect(int doc) throws IOException {
-    for (Collector c : collectors) {
-      c.collect(doc);
-    }
-  }
-
-  @Override
-  public void setNextReader(AtomicReaderContext context) throws IOException {
-    for (Collector c : collectors) {
-      c.setNextReader(context);
-    }
-  }
-
-  @Override
-  public void setScorer(Scorer s) throws IOException {
-    for (Collector c : collectors) {
-      c.setScorer(s);
-    }
   }
 
 }

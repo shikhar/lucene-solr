@@ -73,6 +73,7 @@ import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Scorer;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
+import org.apache.lucene.search.SubCollector;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TimeLimitingCollector;
 import org.apache.lucene.search.TopDocs;
@@ -80,6 +81,7 @@ import org.apache.lucene.search.TopDocsCollector;
 import org.apache.lucene.search.TopFieldCollector;
 import org.apache.lucene.search.TopScoreDocCollector;
 import org.apache.lucene.search.TotalHitCountCollector;
+import org.apache.lucene.search.TotalHitCountWithTopScoreCollector;
 import org.apache.lucene.search.Weight;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.Bits;
@@ -102,7 +104,6 @@ import org.apache.solr.request.UnInvertedField;
 import org.apache.solr.response.SolrQueryResponse;
 import org.apache.solr.schema.IndexSchema;
 import org.apache.solr.schema.SchemaField;
-import org.apache.solr.spelling.QueryConverter;
 import org.apache.solr.update.SolrIndexConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -897,19 +898,20 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
         if (idIter == null) continue;
       }
 
-      collector.setNextReader(leaf);
+      final SubCollector subCollector = collector.subCollector(leaf);
       int max = reader.maxDoc();
 
       if (idIter == null) {
         for (int docid = 0; docid<max; docid++) {
           if (liveDocs != null && !liveDocs.get(docid)) continue;
-          collector.collect(docid);
+          subCollector.collect(docid);
         }
       } else {
         for (int docid = -1; (docid = idIter.advance(docid+1)) < max; ) {
-          collector.collect(docid);
+          subCollector.collect(docid);
         }
       }
+      subCollector.done();
     }
 
     if(collector instanceof DelegatingCollector) {
@@ -1403,50 +1405,8 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
 
     // handle zero case...
     if (lastDocRequested<=0) {
-      final float[] topscore = new float[] { Float.NEGATIVE_INFINITY };
-      final int[] numHits = new int[1];
-
-      Collector collector;
-
-      if (!needScores) {
-        collector = new Collector () {
-          @Override
-          public void setScorer(Scorer scorer) {
-          }
-          @Override
-          public void collect(int doc) {
-            numHits[0]++;
-          }
-          @Override
-          public void setNextReader(AtomicReaderContext context) {
-          }
-          @Override
-          public boolean acceptsDocsOutOfOrder() {
-            return true;
-          }
-        };
-      } else {
-        collector = new Collector() {
-          Scorer scorer;
-          @Override
-          public void setScorer(Scorer scorer) {
-            this.scorer = scorer;
-          }
-          @Override
-          public void collect(int doc) throws IOException {
-            numHits[0]++;
-            float score = scorer.score();
-            if (score > topscore[0]) topscore[0]=score;            
-          }
-          @Override
-          public void setNextReader(AtomicReaderContext context) {
-          }
-          @Override
-          public boolean acceptsDocsOutOfOrder() {
-            return true;
-          }
-        };
-      }
+      final TotalHitCountWithTopScoreCollector totalHitCountWithTopScoreCollector = new TotalHitCountWithTopScoreCollector(needScores);
+      Collector collector = totalHitCountWithTopScoreCollector;
       if (terminateEarly) {
         collector = new EarlyTerminatingCollector(collector, cmd.len);
       }
@@ -1472,8 +1432,8 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
       nDocsReturned=0;
       ids = new int[nDocsReturned];
       scores = new float[nDocsReturned];
-      totalHits = numHits[0];
-      maxScore = totalHits>0 ? topscore[0] : 0.0f;
+      totalHits = totalHitCountWithTopScoreCollector.getTotalHits();
+      maxScore = totalHits > 0 ? totalHitCountWithTopScoreCollector.getTopScore() : 0.0f;
     } else {
       TopDocsCollector topCollector;
       if (cmd.getSort() == null) {
@@ -1553,34 +1513,10 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
 
     // handle zero case...
     if (lastDocRequested<=0) {
-      final float[] topscore = new float[] { Float.NEGATIVE_INFINITY };
 
-      Collector collector;
-      DocSetCollector setCollector;
-
-       if (!needScores) {
-         collector = setCollector = new DocSetCollector(smallSetSize, maxDoc);
-       } else {
-         collector = setCollector = new DocSetDelegateCollector(smallSetSize, maxDoc, new Collector() {
-           Scorer scorer;
-           @Override
-          public void setScorer(Scorer scorer) {
-             this.scorer = scorer;
-           }
-           @Override
-          public void collect(int doc) throws IOException {
-             float score = scorer.score();
-             if (score > topscore[0]) topscore[0]=score;
-           }
-           @Override
-          public void setNextReader(AtomicReaderContext context) {
-           }
-           @Override
-          public boolean acceptsDocsOutOfOrder() {
-             return false;
-           }
-         });
-       }
+      TotalHitCountWithTopScoreCollector totalHitCountWithTopScoreCollector = new TotalHitCountWithTopScoreCollector(needScores);
+      DocSetCollector setCollector = new DocSetCollector(smallSetSize, maxDoc, totalHitCountWithTopScoreCollector);
+      Collector collector = setCollector;
        if (terminateEarly) {
          collector = new EarlyTerminatingCollector(collector, cmd.len);
        }
@@ -1608,8 +1544,8 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
       nDocsReturned = 0;
       ids = new int[nDocsReturned];
       scores = new float[nDocsReturned];
-      totalHits = set.size();
-      maxScore = totalHits>0 ? topscore[0] : 0.0f;
+      totalHits = totalHitCountWithTopScoreCollector.getTotalHits();
+      maxScore = totalHits > 0 ? totalHitCountWithTopScoreCollector.getTopScore() : 0.0f;
     } else {
 
       TopDocsCollector topCollector;
@@ -1620,7 +1556,7 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
         topCollector = TopFieldCollector.create(weightSort(cmd.getSort()), len, false, needScores, needScores, true);
       }
 
-      DocSetCollector setCollector = new DocSetDelegateCollector(maxDoc>>6, maxDoc, topCollector);
+      DocSetCollector setCollector = new DocSetCollector(maxDoc>>6, maxDoc, topCollector);
       Collector collector = setCollector;
       if (terminateEarly) {
         collector = new EarlyTerminatingCollector(collector, cmd.len);
@@ -1909,6 +1845,7 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
     TopDocsCollector topCollector = TopFieldCollector.create(weightSort(sort), nDocs, false, false, false, inOrder);
 
     DocIterator iter = set.iterator();
+    SubCollector subCollector = null;
     int base=0;
     int end=0;
     int readerIndex = 0;
@@ -1919,12 +1856,18 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
         AtomicReaderContext leaf = leafContexts.get(readerIndex++);
         base = leaf.docBase;
         end = base + leaf.reader().maxDoc();
-        topCollector.setNextReader(leaf);
+        if (subCollector != null) {
+          subCollector.done();
+        }
+        subCollector = topCollector.subCollector(leaf);
         // we should never need to set the scorer given the settings for the collector
       }
-      topCollector.collect(doc-base);
+      subCollector.collect(doc-base);
     }
-    
+    if (subCollector != null) {
+      subCollector.done();
+    }
+
     TopDocs topDocs = topCollector.topDocs(0, nDocs);
 
     int nDocsReturned = topDocs.scoreDocs.length;

@@ -39,30 +39,49 @@ final class JustCompileSearch {
 
   private static final String UNSUPPORTED_MSG = "unsupported: used for back-compat testing only !";
 
-  static final class JustCompileCollector extends Collector {
+  static final class JustCompileSubCollector implements SubCollector {
 
     @Override
-    public void collect(int doc) {
+    public void setScorer(Scorer scorer) throws IOException {
       throw new UnsupportedOperationException(UNSUPPORTED_MSG);
     }
 
     @Override
-    public void setNextReader(AtomicReaderContext context) {
+    public void collect(int doc) throws IOException {
       throw new UnsupportedOperationException(UNSUPPORTED_MSG);
     }
 
     @Override
-    public void setScorer(Scorer scorer) {
+    public void done() throws IOException {
       throw new UnsupportedOperationException(UNSUPPORTED_MSG);
     }
-    
+
     @Override
     public boolean acceptsDocsOutOfOrder() {
       throw new UnsupportedOperationException(UNSUPPORTED_MSG);
     }
 
   }
-  
+
+  static final class JustCompileCollector implements Collector {
+
+    @Override
+    public SubCollector subCollector(AtomicReaderContext context) throws IOException {
+      throw new UnsupportedOperationException(UNSUPPORTED_MSG);
+    }
+
+    @Override
+    public void setParallelized() {
+      throw new UnsupportedOperationException(UNSUPPORTED_MSG);
+    }
+
+    @Override
+    public boolean isParallelizable() {
+      throw new UnsupportedOperationException(UNSUPPORTED_MSG);
+    }
+
+  }
+
   static final class JustCompileDocIdSet extends DocIdSet {
 
     @Override
@@ -227,7 +246,7 @@ final class JustCompileSearch {
     }
 
     @Override
-    public boolean score(Collector collector, int max, int firstDocID) {
+    public boolean score(SubCollector collector, int max, int firstDocID) {
       throw new UnsupportedOperationException(UNSUPPORTED_MSG);
     }
     
@@ -287,40 +306,19 @@ final class JustCompileSearch {
     }
 
     @Override
-    public void collect(int doc) {
+    public SubCollector subCollector(AtomicReaderContext context) throws IOException {
       throw new UnsupportedOperationException(UNSUPPORTED_MSG);
     }
 
     @Override
-    public void setNextReader(AtomicReaderContext context) {
+    public void setParallelized() {
       throw new UnsupportedOperationException(UNSUPPORTED_MSG);
     }
 
     @Override
-    public void setScorer(Scorer scorer) {
+    public boolean isParallelizable() {
       throw new UnsupportedOperationException(UNSUPPORTED_MSG);
     }
-    
-    @Override
-    public boolean acceptsDocsOutOfOrder() {
-      throw new UnsupportedOperationException(UNSUPPORTED_MSG);
-    }
-
-    @Override
-    public TopDocs topDocs() {
-        throw new UnsupportedOperationException( UNSUPPORTED_MSG );
-    }
-
-    @Override
-    public TopDocs topDocs( int start ) {
-        throw new UnsupportedOperationException( UNSUPPORTED_MSG );
-    }
-
-    @Override
-    public TopDocs topDocs( int start, int end ) {
-        throw new UnsupportedOperationException( UNSUPPORTED_MSG );
-    }
-    
   }
 
   static final class JustCompileWeight extends Weight {

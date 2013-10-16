@@ -101,7 +101,7 @@ public class TestBooleanScorer extends LuceneTestCase
     BooleanScorer bs = new BooleanScorer(weight, false, 1, Arrays.asList(scorers), null, scorers.length);
 
     final List<Integer> hits = new ArrayList<Integer>();
-    bs.score(new Collector() {
+    bs.score(new SerialCollector() {
       int docBase;
       @Override
       public void setScorer(Scorer scorer) {
@@ -151,7 +151,7 @@ public class TestBooleanScorer extends LuceneTestCase
                             BooleanClause.Occur.SHOULD));
                             
     final int[] count = new int[1];
-    s.search(q, new Collector() {
+    s.search(q, new SerialCollector() {
     
       @Override
       public void setScorer(Scorer scorer) {

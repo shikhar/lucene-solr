@@ -39,6 +39,7 @@ import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.PhraseQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.SerialCollector;
 import org.apache.lucene.search.TopDocs;
 
 import org.apache.lucene.search.spans.SpanNearQuery;
@@ -116,7 +117,7 @@ public class HighlighterPhraseTest extends LuceneTestCase {
           new SpanTermQuery(new Term(FIELD, "fox")),
           new SpanTermQuery(new Term(FIELD, "jumped")) }, 0, true);
       final FixedBitSet bitset = new FixedBitSet(indexReader.maxDoc());
-      indexSearcher.search(phraseQuery, new Collector() {
+      indexSearcher.search(phraseQuery, new SerialCollector() {
         private int baseDoc;
 
         @Override

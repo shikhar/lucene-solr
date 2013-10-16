@@ -97,7 +97,7 @@ public class TestScorerPerf extends LuceneTestCase {
     return sets;
   }
 
-  public static class CountingHitCollector extends Collector {
+  public static class CountingHitCollector extends SerialCollector {
     int count=0;
     int sum=0;
     protected int docBase = 0;
@@ -133,7 +133,7 @@ public class TestScorerPerf extends LuceneTestCase {
     }
 
     public void collect(int doc, float score) {
-      
+
       pos = answer.nextSetBit(pos+1);
       if (pos != doc + docBase) {
         throw new RuntimeException("Expected doc " + pos + " but got " + doc + docBase);

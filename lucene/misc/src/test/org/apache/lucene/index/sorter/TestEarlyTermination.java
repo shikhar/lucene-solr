@@ -38,6 +38,7 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
+import org.apache.lucene.search.SubCollector;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopFieldCollector;
 import org.apache.lucene.store.Directory;
@@ -148,9 +149,10 @@ public class TestEarlyTermination extends LuceneTestCase {
       searcher.search(query, collector1);
       searcher.search(query, new EarlyTerminatingSortingCollector(collector2, new NumericDocValuesSorter("ndv2"), numHits) {
         @Override
-        public void setNextReader(AtomicReaderContext context) throws IOException {
-          super.setNextReader(context);
-          assertFalse("segment should not be recognized as sorted as different sorter was used", segmentSorted);
+        public EarlyTerminatingSortingSubCollector subCollector(AtomicReaderContext context) throws IOException {
+          final EarlyTerminatingSortingSubCollector actual = super.subCollector(context);
+          assertFalse("segment should not be recognized as sorted as different sorter was used", actual.segmentSorted);
+          return actual;
         }
       });
     }

@@ -171,7 +171,7 @@ public class CommandHandler {
       docSetCollector = new DocSetCollector(maxDoc >> 6, maxDoc);
     } else {
       Collector wrappedCollectors = MultiCollector.wrap(collectors.toArray(new Collector[collectors.size()]));
-      docSetCollector = new DocSetDelegateCollector(maxDoc >> 6, maxDoc, wrappedCollectors);
+      docSetCollector = new DocSetCollector(maxDoc >> 6, maxDoc, wrappedCollectors);
     }
     searchWithTimeLimiter(query, filter, docSetCollector);
     return docSetCollector.getDocSet();

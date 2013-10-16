@@ -59,7 +59,7 @@ public class TestDocBoost extends LuceneTestCase {
     IndexSearcher searcher = newSearcher(reader);
     searcher.search
       (new TermQuery(new Term("field", "word")),
-       new Collector() {
+       new SerialCollector() {
          private int base = 0;
          private Scorer scorer;
          @Override

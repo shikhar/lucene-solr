@@ -249,7 +249,7 @@ public class QueryUtils {
         final float maxDiff = 1e-5f;
         final AtomicReader lastReader[] = {null};
 
-        s.search(q, new Collector() {
+        s.search(q, new SerialCollector() {
           private Scorer sc;
           private Scorer scorer;
           private int leafPtr;
@@ -357,7 +357,7 @@ public class QueryUtils {
     final int lastDoc[] = {-1};
     final AtomicReader lastReader[] = {null};
     final List<AtomicReaderContext> context = s.getTopReaderContext().leaves();
-    s.search(q,new Collector() {
+    s.search(q,new SerialCollector() {
       private Scorer scorer;
       private int leafPtr;
       private Bits liveDocs;

@@ -58,7 +58,7 @@ public class TestEarlyTermination extends LuceneTestCase {
 
     for (int i = 0; i < iters; ++i) {
       final IndexSearcher searcher = newSearcher(reader);
-      final Collector collector = new Collector() {
+      final Collector collector = new SerialCollector() {
 
         final boolean outOfOrder = random().nextBoolean();
         boolean collectionTerminated = true;

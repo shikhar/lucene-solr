@@ -19,7 +19,7 @@ package org.apache.solr.search.grouping.collector;
 
 import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.search.Collector;
-import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.WrappingCollector;
 import org.apache.solr.search.DocSet;
 
 import java.io.IOException;
@@ -29,40 +29,15 @@ import java.io.IOException;
  *
  * @lucene.experimental
  */
-public class FilterCollector extends Collector {
+public class FilterCollector extends WrappingCollector {
 
   private final DocSet filter;
-  private final Collector delegate;
-  private int docBase;
+
   private int matches;
 
   public FilterCollector(DocSet filter, Collector delegate) {
+    super(delegate);
     this.filter = filter;
-    this.delegate = delegate;
-  }
-
-  @Override
-  public void setScorer(Scorer scorer) throws IOException {
-    delegate.setScorer(scorer);
-  }
-
-  @Override
-  public void collect(int doc) throws IOException {
-    matches++;
-    if (filter.exists(doc + docBase)) {
-      delegate.collect(doc);
-    }
-  }
-
-  @Override
-  public void setNextReader(AtomicReaderContext context) throws IOException {
-    this.docBase = context.docBase;
-    delegate.setNextReader(context);
-  }
-
-  @Override
-  public boolean acceptsDocsOutOfOrder() {
-    return delegate.acceptsDocsOutOfOrder();
   }
 
   public int getMatches() {
@@ -77,4 +52,28 @@ public class FilterCollector extends Collector {
   public Collector getDelegate() {
     return delegate;
   }
+
+  @Override
+  public WrappingSubCollector subCollector(AtomicReaderContext context) throws IOException {
+    final int docBase = context.docBase;
+    return new WrappingSubCollector(delegate.subCollector(context)) {
+
+      int subMatches = 0;
+
+      @Override
+      public void collect(int doc) throws IOException {
+        subMatches++;
+        if (filter.exists(doc + docBase)) {
+          delegate.collect(doc);
+        }
+      }
+
+      @Override
+      public void done() throws IOException {
+        delegate.done();
+        FilterCollector.this.matches += subMatches;
+      }
+    };
+  }
+
 }

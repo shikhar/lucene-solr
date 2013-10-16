@@ -22,49 +22,41 @@ import org.apache.lucene.index.AtomicReaderContext;
 import java.io.IOException;
 
 /**
- * Just counts the total number of hits.
+ * SerialCollector is intended as a drop-in replacement for the old Collector API which did not rely on
+ * per-reader-context {@link SubCollector} instances.
  */
+public abstract class SerialCollector implements Collector, SubCollector {
 
-public class TotalHitCountCollector implements Collector {
-  private int totalHits;
-
-  /** Returns how many hits matched the search. */
-  public int getTotalHits() {
-    return totalHits;
+  @Override
+  public SubCollector subCollector(AtomicReaderContext context) throws IOException {
+    setNextReader(context);
+    return this;
   }
 
   @Override
-  public SubCollector subCollector(AtomicReaderContext ctx) {
-    return new SubCollector() {
-      int totalHits;
-
-      @Override
-      public void setScorer(Scorer scorer) {
-      }
-
-      @Override
-      public void collect(int doc) {
-        totalHits++;
-      }
-
-      @Override
-      public void done() throws IOException {
-        TotalHitCountCollector.this.totalHits += totalHits;
-      }
-
-      @Override
-      public boolean acceptsDocsOutOfOrder() {
-        return true;
-      }
-    };
+  public void done() throws IOException {
   }
 
   @Override
   public void setParallelized() {
+    throw new UnsupportedOperationException();
   }
 
   @Override
   public boolean isParallelizable() {
-    return true;
+    return false;
   }
+
+  /**
+   * Called before collecting from each {@link AtomicReaderContext}. All doc ids in
+   * {@link #collect(int)} will correspond to {@link IndexReaderContext#reader}.
+   * <p/>
+   * Add {@link AtomicReaderContext#docBase} to the current  {@link IndexReaderContext#reader}'s
+   * internal document id to re-base ids in {@link #collect(int)}.
+   *
+   * @param context
+   *     next atomic reader context
+   */
+  protected abstract void setNextReader(AtomicReaderContext context) throws IOException;
+
 }

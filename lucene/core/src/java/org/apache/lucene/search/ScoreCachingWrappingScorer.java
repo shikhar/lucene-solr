@@ -45,7 +45,7 @@ public class ScoreCachingWrappingScorer extends Scorer {
   }
 
   @Override
-  public boolean score(Collector collector, int max, int firstDocID) throws IOException {
+  public boolean score(SubCollector collector, int max, int firstDocID) throws IOException {
     return scorer.score(collector, max, firstDocID);
   }
   
@@ -76,7 +76,7 @@ public class ScoreCachingWrappingScorer extends Scorer {
   }
   
   @Override
-  public void score(Collector collector) throws IOException {
+  public void score(SubCollector collector) throws IOException {
     scorer.score(collector);
   }
   

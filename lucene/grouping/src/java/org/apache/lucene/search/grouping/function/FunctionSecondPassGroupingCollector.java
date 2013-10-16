@@ -21,6 +21,7 @@ import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.queries.function.FunctionValues;
 import org.apache.lucene.queries.function.ValueSource;
 import org.apache.lucene.search.Sort;
+import org.apache.lucene.search.SubCollector;
 import org.apache.lucene.search.grouping.AbstractSecondPassGroupingCollector;
 import org.apache.lucene.search.grouping.SearchGroup;
 import org.apache.lucene.util.mutable.MutableValue;
@@ -71,11 +72,12 @@ public class FunctionSecondPassGroupingCollector extends AbstractSecondPassGroup
   }
 
   @Override
-  public void setNextReader(AtomicReaderContext readerContext) throws IOException {
-    super.setNextReader(readerContext);
+  public SubCollector subCollector(AtomicReaderContext readerContext) throws IOException {
+    final SubCollector sub = super.subCollector(readerContext);
     FunctionValues values = groupByVS.getValues(vsContext, readerContext);
     filler = values.getValueFiller();
     mval = filler.getValue();
+    return sub;
   }
 
 }

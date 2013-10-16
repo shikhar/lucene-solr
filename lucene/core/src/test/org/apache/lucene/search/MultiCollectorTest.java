@@ -27,7 +27,7 @@ import org.junit.Test;
 
 public class MultiCollectorTest extends LuceneTestCase {
 
-  private static class DummyCollector extends Collector {
+  private static class DummyCollector extends SerialCollector {
 
     boolean acceptsDocsOutOfOrderCalled = false;
     boolean collectCalled = false;
@@ -71,10 +71,10 @@ public class MultiCollectorTest extends LuceneTestCase {
     // doesn't, an NPE would be thrown.
     Collector c = MultiCollector.wrap(new DummyCollector(), null, new DummyCollector());
     assertTrue(c instanceof MultiCollector);
-    assertTrue(c.acceptsDocsOutOfOrder());
-    c.collect(1);
-    c.setNextReader(null);
-    c.setScorer(null);
+    final SubCollector subCollector = c.subCollector(null);
+    assertTrue(subCollector.acceptsDocsOutOfOrder());
+    subCollector.collect(1);
+    subCollector.setScorer(null);
   }
 
   @Test
@@ -93,10 +93,10 @@ public class MultiCollectorTest extends LuceneTestCase {
     // doesn't, an NPE would be thrown.
     DummyCollector[] dcs = new DummyCollector[] { new DummyCollector(), new DummyCollector() };
     Collector c = MultiCollector.wrap(dcs);
-    assertTrue(c.acceptsDocsOutOfOrder());
-    c.collect(1);
-    c.setNextReader(null);
-    c.setScorer(null);
+    final SubCollector subCollector = c.subCollector(null);
+    assertTrue(subCollector.acceptsDocsOutOfOrder());
+    subCollector.collect(1);
+    subCollector.setScorer(null);
 
     for (DummyCollector dc : dcs) {
       assertTrue(dc.acceptsDocsOutOfOrderCalled);

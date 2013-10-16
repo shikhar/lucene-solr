@@ -32,7 +32,7 @@ import org.apache.lucene.util.PriorityQueue;
  * 
  * @lucene.experimental
  */
-public abstract class TopFieldCollector extends TopDocsCollector<Entry> {
+public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
   
   // TODO: one optimization we could do is to pre-fill
   // the queue with sentinel value that guaranteed to

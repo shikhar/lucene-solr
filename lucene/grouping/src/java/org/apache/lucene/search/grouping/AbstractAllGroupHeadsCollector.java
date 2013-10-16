@@ -19,6 +19,7 @@ package org.apache.lucene.search.grouping;
 
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.search.Collector;
+import org.apache.lucene.search.SerialCollector;
 import org.apache.lucene.util.FixedBitSet;
 
 import java.io.IOException;
@@ -30,7 +31,7 @@ import java.util.Collection;
  * @lucene.experimental
  */
 @SuppressWarnings({"unchecked","rawtypes"})
-public abstract class AbstractAllGroupHeadsCollector<GH extends AbstractAllGroupHeadsCollector.GroupHead> extends Collector {
+public abstract class AbstractAllGroupHeadsCollector<GH extends AbstractAllGroupHeadsCollector.GroupHead> extends SerialCollector {
 
   protected final int[] reversed;
   protected final int compIDXEnd;

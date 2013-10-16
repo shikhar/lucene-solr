@@ -74,7 +74,7 @@ import java.util.*;
  *
  * @lucene.experimental
  */
-public class ToParentBlockJoinCollector extends Collector {
+public class ToParentBlockJoinCollector extends SerialCollector {
 
   private final Sort sort;
 
@@ -460,8 +460,8 @@ public class ToParentBlockJoinCollector extends Collector {
         collector = TopFieldCollector.create(withinGroupSort, numDocsInGroup, fillSortFields, trackScores, trackMaxScore, true);
       }
 
-      collector.setScorer(fakeScorer);
-      collector.setNextReader(og.readerContext);
+      final SubCollector subCollector = collector.subCollector(og.readerContext);
+      subCollector.setScorer(fakeScorer);
       for(int docIDX=0;docIDX<numChildDocs;docIDX++) {
         //System.out.println("docIDX=" + docIDX + " vs " + og.docs[slot].length);
         final int doc = og.docs[slot][docIDX];
@@ -469,8 +469,10 @@ public class ToParentBlockJoinCollector extends Collector {
         if (trackScores) {
           fakeScorer.score = og.scores[slot][docIDX];
         }
-        collector.collect(doc);
+        subCollector.collect(doc);
       }
+      subCollector.done();
+
       totalGroupedHitCount += numChildDocs;
 
       final Object[] groupSortValues;

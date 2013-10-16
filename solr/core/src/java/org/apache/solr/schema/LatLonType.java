@@ -37,6 +37,7 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.Scorer;
 import org.apache.lucene.search.SortField;
+import org.apache.lucene.search.SubCollector;
 import org.apache.lucene.search.Weight;
 import org.apache.lucene.util.Bits;
 import org.apache.solr.common.SolrException;
@@ -537,24 +538,40 @@ class SpatialDistanceQuery extends ExtendedQueryBase implements PostFilter {
 
   class SpatialCollector extends DelegatingCollector {
     final SpatialWeight weight;
-    SpatialScorer spatialScorer;
-    int maxdoc;
-    
+
     public SpatialCollector(SpatialWeight weight) {
       this.weight = weight;
     }
 
     @Override
-    public void collect(int doc) throws IOException {
-      spatialScorer.doc = doc;
-      if (spatialScorer.match()) delegate.collect(doc);
-    }
+    public SubCollector subCollector(final AtomicReaderContext context)
+        throws IOException {
+      final SpatialScorer spatialScorer = new SpatialScorer(context, null, weight, 1.0f);
+      final SubCollector delegateSub = delegate.subCollector(context);
+      return new SubCollector() {
+        @Override
+        public void setScorer(Scorer scorer) throws IOException {
+          delegateSub.setScorer(scorer);
+        }
 
-    @Override
-    public void setNextReader(AtomicReaderContext context) throws IOException {
-      maxdoc = context.reader().maxDoc();
-      spatialScorer = new SpatialScorer(context, null, weight, 1.0f);
-      super.setNextReader(context);
+        @Override
+        public void collect(int doc) throws IOException {
+          spatialScorer.doc = doc;
+          if (spatialScorer.match()) {
+            delegateSub.collect(doc);
+          }
+        }
+
+        @Override
+        public void done() throws IOException {
+          delegateSub.done();
+        }
+
+        @Override
+        public boolean acceptsDocsOutOfOrder() {
+          return delegateSub.acceptsDocsOutOfOrder();
+        }
+      };
     }
   }
 

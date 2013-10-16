@@ -121,48 +121,15 @@ public class TestBooleanQueryVisitSubscorers extends LuceneTestCase {
     return collector.docCounts;
   }
   
-  static class MyCollector extends Collector {
+  static class MyCollector extends WrappingCollector {
     
-    private TopDocsCollector<ScoreDoc> collector;
-    private int docBase;
-
     public final Map<Integer,Integer> docCounts = new HashMap<Integer,Integer>();
     private final Set<Scorer> tqsSet = new HashSet<Scorer>();
     
     MyCollector() {
-      collector = TopScoreDocCollector.create(10, true);
+      super(TopScoreDocCollector.create(10, true));
     }
 
-    @Override
-    public boolean acceptsDocsOutOfOrder() {
-      return false;
-    }
-
-    @Override
-    public void collect(int doc) throws IOException {
-      int freq = 0;
-      for(Scorer scorer : tqsSet) {
-        if (doc == scorer.docID()) {
-          freq += scorer.freq();
-        }
-      }
-      docCounts.put(doc + docBase, freq);
-      collector.collect(doc);
-    }
-
-    @Override
-    public void setNextReader(AtomicReaderContext context) throws IOException {
-      this.docBase = context.docBase;
-      collector.setNextReader(context);
-    }
-
-    @Override
-    public void setScorer(Scorer scorer) throws IOException {
-      collector.setScorer(scorer);
-      tqsSet.clear();
-      fillLeaves(scorer, tqsSet);
-    }
-    
     private void fillLeaves(Scorer scorer, Set<Scorer> set) {
       if (scorer.getWeight().getQuery() instanceof TermQuery) {
         set.add(scorer);
@@ -174,11 +141,48 @@ public class TestBooleanQueryVisitSubscorers extends LuceneTestCase {
     }
     
     public TopDocs topDocs(){
-      return collector.topDocs();
+      return ((TopScoreDocCollector) super.delegate).topDocs();
     }
     
     public int freq(int doc) throws IOException {
       return docCounts.get(doc);
+    }
+
+    @Override
+    public WrappingSubCollector subCollector(AtomicReaderContext context) throws IOException {
+      final int docBase = context.docBase;
+      return new WrappingSubCollector(delegate.subCollector(context)) {
+
+        @Override
+        public void setScorer(Scorer scorer) throws IOException {
+          delegate.setScorer(scorer);
+          tqsSet.clear();
+          fillLeaves(scorer, tqsSet);
+        }
+
+        @Override
+        public void collect(int doc) throws IOException {
+          int freq = 0;
+          for(Scorer scorer : tqsSet) {
+            if (doc == scorer.docID()) {
+              freq += scorer.freq();
+            }
+          }
+          docCounts.put(doc + docBase, freq);
+          delegate.collect(doc);
+        }
+
+        @Override
+        public boolean acceptsDocsOutOfOrder() {
+          return false;
+        }
+
+      };
+    }
+
+    @Override
+    public boolean isParallelizable() {
+      return false;
     }
   }
 }

@@ -25,6 +25,7 @@ import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.index.DocsEnum;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.SubCollector;
 import org.apache.lucene.search.Weight;
 import org.apache.lucene.util.FixedBitSet;
 
@@ -57,19 +58,25 @@ class DrillSidewaysScorer extends Scorer {
   }
 
   @Override
-  public void score(Collector collector) throws IOException {
+  public void score(SubCollector collector) throws IOException {
     //if (DEBUG) {
     //  System.out.println("\nscore: reader=" + context.reader());
     //}
     //System.out.println("score r=" + context.reader());
     collector.setScorer(this);
+
+    final SubCollector drillDownSubCollector;
     if (drillDownCollector != null) {
-      drillDownCollector.setScorer(this);
-      drillDownCollector.setNextReader(context);
+      drillDownSubCollector = drillDownCollector.subCollector(context);
+      drillDownSubCollector.setScorer(this);
+    } else {
+      drillDownSubCollector = null;
     }
-    for(DocsEnumsAndFreq dim : dims) {
-      dim.sidewaysCollector.setScorer(this);
-      dim.sidewaysCollector.setNextReader(context);
+
+    SubCollector[] drillSidewaysSubCollectors = new SubCollector[dims.length];
+    for (int i = 0; i < dims.length; i++) {
+      drillSidewaysSubCollectors[i] = dims[i].sidewaysCollector.subCollector(context);
+      drillSidewaysSubCollectors[i].setScorer(this);
     }
 
     // TODO: if we ever allow null baseScorer ... it will
@@ -90,11 +97,9 @@ class DrillSidewaysScorer extends Scorer {
     final int numDims = dims.length;
 
     DocsEnum[][] docsEnums = new DocsEnum[numDims][];
-    Collector[] sidewaysCollectors = new Collector[numDims];
     long drillDownCost = 0;
     for(int dim=0;dim<numDims;dim++) {
       docsEnums[dim] = dims[dim].docsEnums;
-      sidewaysCollectors[dim] = dims[dim].sidewaysCollector;
       for (DocsEnum de : dims[dim].docsEnums) {
         if (de != null) {
           drillDownCost += de.cost();
@@ -116,19 +121,28 @@ class DrillSidewaysScorer extends Scorer {
 
     if (baseQueryCost < drillDownCost/10) {
       //System.out.println("baseAdvance");
-      doBaseAdvanceScoring(collector, docsEnums, sidewaysCollectors);
+      doBaseAdvanceScoring(collector, docsEnums, drillDownSubCollector, drillSidewaysSubCollectors);
     } else if (numDims > 1 && (dims[1].maxCost < baseQueryCost/10)) {
       //System.out.println("drillDownAdvance");
-      doDrillDownAdvanceScoring(collector, docsEnums, sidewaysCollectors);
+      doDrillDownAdvanceScoring(collector, docsEnums, drillDownSubCollector, drillSidewaysSubCollectors);
     } else {
       //System.out.println("union");
-      doUnionScoring(collector, docsEnums, sidewaysCollectors);
+      doUnionScoring(collector, docsEnums, drillDownSubCollector, drillSidewaysSubCollectors);
+    }
+
+    if (drillDownSubCollector != null) {
+      drillDownSubCollector.done();
+    }
+    for (SubCollector s: drillSidewaysSubCollectors) {
+      s.done();
     }
   }
 
   /** Used when drill downs are highly constraining vs
    *  baseQuery. */
-  private void doDrillDownAdvanceScoring(Collector collector, DocsEnum[][] docsEnums, Collector[] sidewaysCollectors) throws IOException {
+  private void doDrillDownAdvanceScoring(SubCollector collector, DocsEnum[][] docsEnums,
+                                         SubCollector downCollector,
+                                         SubCollector[] sidewaysCollectors) throws IOException {
     final int maxDoc = context.reader().maxDoc();
     final int numDims = dims.length;
 
@@ -317,7 +331,7 @@ class DrillSidewaysScorer extends Scorer {
         //  System.out.println("    docID=" + docIDs[slot] + " count=" + counts[slot]);
         //}
         if (counts[slot] == 1+numDims) {
-          collectHit(collector, sidewaysCollectors);
+          collectHit(collector, downCollector, sidewaysCollectors);
         } else if (counts[slot] == numDims) {
           collectNearMiss(sidewaysCollectors, missingDims[slot]);
         }
@@ -334,7 +348,8 @@ class DrillSidewaysScorer extends Scorer {
   /** Used when base query is highly constraining vs the
    *  drilldowns; in this case we just .next() on base and
    *  .advance() on the dims. */
-  private void doBaseAdvanceScoring(Collector collector, DocsEnum[][] docsEnums, Collector[] sidewaysCollectors) throws IOException {
+  private void doBaseAdvanceScoring(SubCollector collector, DocsEnum[][] docsEnums,
+                                    SubCollector downCollector, SubCollector[] sidewaysCollectors) throws IOException {
     //if (DEBUG) {
     //  System.out.println("  doBaseAdvanceScoring");
     //}
@@ -380,7 +395,7 @@ class DrillSidewaysScorer extends Scorer {
       collectScore = baseScorer.score();
 
       if (failedDim == -1) {
-        collectHit(collector, sidewaysCollectors);
+        collectHit(collector, downCollector, sidewaysCollectors);
       } else {
         collectNearMiss(sidewaysCollectors, failedDim);
       }
@@ -389,14 +404,14 @@ class DrillSidewaysScorer extends Scorer {
     }
   }
 
-  private void collectHit(Collector collector, Collector[] sidewaysCollectors) throws IOException {
+  private void collectHit(SubCollector collector, SubCollector downCollector, SubCollector[] sidewaysCollectors) throws IOException {
     //if (DEBUG) {
     //  System.out.println("      hit");
     //}
 
     collector.collect(collectDocID);
-    if (drillDownCollector != null) {
-      drillDownCollector.collect(collectDocID);
+    if (downCollector != null) {
+      downCollector.collect(collectDocID);
     }
 
     // TODO: we could "fix" faceting of the sideways counts
@@ -409,14 +424,15 @@ class DrillSidewaysScorer extends Scorer {
     }
   }
 
-  private void collectNearMiss(Collector[] sidewaysCollectors, int dim) throws IOException {
+  private void collectNearMiss(SubCollector[] sidewaysCollectors, int dim) throws IOException {
     //if (DEBUG) {
     //  System.out.println("      missingDim=" + dim);
     //}
     sidewaysCollectors[dim].collect(collectDocID);
   }
 
-  private void doUnionScoring(Collector collector, DocsEnum[][] docsEnums, Collector[] sidewaysCollectors) throws IOException {
+  private void doUnionScoring(SubCollector collector, DocsEnum[][] docsEnums,
+                              SubCollector downCollector, SubCollector[] sidewaysCollectors) throws IOException {
     //if (DEBUG) {
     //  System.out.println("  doUnionScoring");
     //}
@@ -583,7 +599,7 @@ class DrillSidewaysScorer extends Scorer {
         //System.out.println("  collect doc=" + collectDocID + " main.freq=" + (counts[slot]-1) + " main.doc=" + collectDocID + " exactCount=" + numDims);
         if (counts[slot] == 1+numDims) {
           //System.out.println("    hit");
-          collectHit(collector, sidewaysCollectors);
+          collectHit(collector, downCollector, sidewaysCollectors);
         } else if (counts[slot] == numDims) {
           //System.out.println("    sw");
           collectNearMiss(sidewaysCollectors, missingDims[slot]);

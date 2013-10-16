@@ -25,46 +25,41 @@ import org.apache.lucene.index.AtomicReaderContext;
 /** Wraps another Collector and checks that
  *  acceptsDocsOutOfOrder is respected. */
 
-public class AssertingCollector extends Collector {
+public class AssertingCollector extends WrappingCollector {
 
   public static Collector wrap(Random random, Collector other, boolean inOrder) {
     return other instanceof AssertingCollector ? other : new AssertingCollector(random, other, inOrder);
   }
 
   final Random random;
-  final Collector in;
   final boolean inOrder;
-  int lastCollected;
 
   AssertingCollector(Random random, Collector in, boolean inOrder) {
+    super(in);
     this.random = random;
-    this.in = in;
     this.inOrder = inOrder;
-    lastCollected = -1;
   }
 
   @Override
-  public void setScorer(Scorer scorer) throws IOException {
-    in.setScorer(AssertingScorer.getAssertingScorer(random, scorer));
-  }
+  public WrappingSubCollector subCollector(AtomicReaderContext context) throws IOException {
+    return new WrappingSubCollector(delegate.subCollector(context)) {
 
-  @Override
-  public void collect(int doc) throws IOException {
-    if (inOrder || !acceptsDocsOutOfOrder()) {
-      assert doc > lastCollected : "Out of order : " + lastCollected + " " + doc;
-    }
-    in.collect(doc);
-    lastCollected = doc;
-  }
+      int lastCollected = -1;
 
-  @Override
-  public void setNextReader(AtomicReaderContext context) throws IOException {
-    lastCollected = -1;
-  }
+      @Override
+      public void setScorer(Scorer scorer) throws IOException {
+        delegate.setScorer(AssertingScorer.getAssertingScorer(random, scorer));
+      }
 
-  @Override
-  public boolean acceptsDocsOutOfOrder() {
-    return in.acceptsDocsOutOfOrder();
+      @Override
+      public void collect(int doc) throws IOException {
+        if (inOrder || !acceptsDocsOutOfOrder()) {
+          assert doc > lastCollected : "Out of order : " + lastCollected + " " + doc;
+        }
+        delegate.collect(doc);
+        lastCollected = doc;
+      }
+    };
   }
 
 }

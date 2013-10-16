@@ -25,11 +25,12 @@ import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.FieldCache;
 import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.SerialCollector;
 import org.apache.lucene.util.ArrayUtil;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefHash;
 
-abstract class TermsWithScoreCollector extends Collector {
+abstract class TermsWithScoreCollector extends SerialCollector {
 
   private final static int INITIAL_ARRAY_SIZE = 256;
 

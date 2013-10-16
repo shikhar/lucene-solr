@@ -76,7 +76,7 @@ public class TestSimilarity extends LuceneTestCase {
     Term b = new Term("field", "b");
     Term c = new Term("field", "c");
 
-    searcher.search(new TermQuery(b), new Collector() {
+    searcher.search(new TermQuery(b), new SerialCollector() {
          private Scorer scorer;
          @Override
         public void setScorer(Scorer scorer) {
@@ -98,7 +98,7 @@ public class TestSimilarity extends LuceneTestCase {
     bq.add(new TermQuery(a), BooleanClause.Occur.SHOULD);
     bq.add(new TermQuery(b), BooleanClause.Occur.SHOULD);
     //System.out.println(bq.toString("field"));
-    searcher.search(bq, new Collector() {
+    searcher.search(bq, new SerialCollector() {
          private int base = 0;
          private Scorer scorer;
          @Override
@@ -125,7 +125,7 @@ public class TestSimilarity extends LuceneTestCase {
     pq.add(c);
     //System.out.println(pq.toString("field"));
     searcher.search(pq,
-       new Collector() {
+       new SerialCollector() {
          private Scorer scorer;
          @Override
          public void setScorer(Scorer scorer) {
@@ -146,7 +146,7 @@ public class TestSimilarity extends LuceneTestCase {
 
     pq.setSlop(2);
     //System.out.println(pq.toString("field"));
-    searcher.search(pq, new Collector() {
+    searcher.search(pq, new SerialCollector() {
       private Scorer scorer;
       @Override
       public void setScorer(Scorer scorer) {

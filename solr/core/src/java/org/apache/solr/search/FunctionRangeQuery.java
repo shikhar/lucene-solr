@@ -23,6 +23,8 @@ import org.apache.lucene.queries.function.FunctionValues;
 import org.apache.lucene.queries.function.ValueSource;
 import org.apache.lucene.queries.function.ValueSourceScorer;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.SubCollector;
 import org.apache.solr.search.function.ValueSourceRangeFilter;
 
 import java.io.IOException;
@@ -45,26 +47,49 @@ public class FunctionRangeQuery extends SolrConstantScoreQuery implements PostFi
 
   class FunctionRangeCollector extends DelegatingCollector {
     final Map fcontext;
-    ValueSourceScorer scorer;
-    int maxdoc;
 
     public FunctionRangeCollector(Map fcontext) {
       this.fcontext = fcontext;
     }
 
     @Override
-    public void collect(int doc) throws IOException {
-      if (doc<maxdoc && scorer.matches(doc)) {
-        delegate.collect(doc);
-      }
+    public SubCollector subCollector(final AtomicReaderContext context)
+        throws IOException {
+      final int maxDoc = context.reader().maxDoc();
+      final FunctionValues dv = rangeFilt.getValueSource().getValues(fcontext, context);
+      final ValueSourceScorer scorer = dv.getRangeScorer(context.reader(),
+          rangeFilt.getLowerVal(), rangeFilt.getUpperVal(),
+          rangeFilt.isIncludeLower(), rangeFilt.isIncludeUpper()
+      );
+
+      final SubCollector delegateSub = delegate.subCollector(context);
+
+      return new SubCollector() {
+
+        @Override
+        public void setScorer(Scorer scorer) throws IOException {
+          delegateSub.setScorer(scorer);
+        }
+
+        @Override
+        public void collect(int doc) throws IOException {
+          if (doc < maxDoc && scorer.matches(doc)) {
+            delegateSub.collect(doc);
+          }
+        }
+
+        @Override
+        public void done() throws IOException {
+          delegateSub.done();
+        }
+
+        @Override
+        public boolean acceptsDocsOutOfOrder() {
+          return delegateSub.acceptsDocsOutOfOrder();
+        }
+
+      };
     }
 
-    @Override
-    public void setNextReader(AtomicReaderContext context) throws IOException {
-      maxdoc = context.reader().maxDoc();
-      FunctionValues dv = rangeFilt.getValueSource().getValues(fcontext, context);
-      scorer = dv.getRangeScorer(context.reader(), rangeFilt.getLowerVal(), rangeFilt.getUpperVal(), rangeFilt.isIncludeLower(), rangeFilt.isIncludeUpper());
-      super.setNextReader(context);
-    }
   }
 }

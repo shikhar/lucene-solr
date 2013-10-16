@@ -30,6 +30,7 @@ import org.apache.lucene.facet.params.FacetSearchParams;
 import org.apache.lucene.facet.sortedset.SortedSetDocValuesFacetFields;
 import org.apache.lucene.facet.sortedset.SortedSetDocValuesReaderState;
 import org.apache.lucene.facet.taxonomy.TaxonomyReader;
+import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause;
@@ -44,6 +45,7 @@ import org.apache.lucene.search.MultiCollector;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Sort;
+import org.apache.lucene.search.SubCollector;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopFieldCollector;
@@ -166,7 +168,8 @@ public class DrillSideways {
    */
   @SuppressWarnings({"rawtypes","unchecked"})
   public DrillSidewaysResult search(DrillDownQuery query,
-                                    Collector hitCollector, FacetSearchParams fsp) throws IOException {
+                                    final Collector hitCollector,
+                                    FacetSearchParams fsp) throws IOException {
 
     if (query.fip != fsp.indexingParams) {
       throw new IllegalArgumentException("DrillDownQuery's FacetIndexingParams should match FacetSearchParams'");
@@ -213,9 +216,9 @@ public class DrillSideways {
       startClause = 1;
     }
 
-    FacetsCollector drillDownCollector = fsp2 == null ? null : FacetsCollector.create(getDrillDownAccumulator(fsp2));
+    final FacetsCollector drillDownCollector = fsp2 == null ? null : FacetsCollector.create(getDrillDownAccumulator(fsp2));
 
-    FacetsCollector[] drillSidewaysCollectors = new FacetsCollector[drillDownDims.size()];
+    final FacetsCollector[] drillSidewaysCollectors = new FacetsCollector[drillDownDims.size()];
 
     int idx = 0;
     for(String dim : drillDownDims.keySet()) {
@@ -279,7 +282,44 @@ public class DrillSideways {
       collectorMethod(query, baseQuery, startClause, hitCollector, drillDownCollector, drillSidewaysCollectors);
     } else {
       DrillSidewaysQuery dsq = new DrillSidewaysQuery(baseQuery, drillDownCollector, drillSidewaysCollectors, drillDownTerms);
-      searcher.search(dsq, hitCollector);
+      searcher.search(dsq, new Collector() {
+
+        // The collector provided to IndexSearcher must account for the down & sideways collectors, since
+        // DrillSidewaysScorer internally manages their sub-collectors.
+        // in case of collectorMethod(), DrillSidewaysCollector is used which takes care this in one place (much nicer)
+
+        @Override
+        public SubCollector subCollector(AtomicReaderContext context) throws IOException {
+          return hitCollector.subCollector(context);
+        };
+
+        @Override
+        public void setParallelized() {
+          hitCollector.setParallelized();
+          if (drillDownCollector != null) {
+            drillDownCollector.setParallelized();
+          }
+          for (Collector c: drillSidewaysCollectors) {
+            c.setParallelized();
+          }
+        }
+
+        @Override
+        public boolean isParallelizable() {
+          if (!hitCollector.isParallelizable()) {
+            return false;
+          }
+          if (drillDownCollector != null && !drillDownCollector.isParallelizable()) {
+            return false;
+          }
+          for (Collector c: drillSidewaysCollectors) {
+            if (!c.isParallelizable()) {
+              return false;
+            }
+          }
+          return true;
+        }
+      });
     }
 
     int numDims = drillDownDims.size();

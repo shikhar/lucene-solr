@@ -18,11 +18,9 @@ package org.apache.lucene.search;
  */
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
-import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.search.BooleanQuery.BooleanWeight;
 
 /* Description from Doug Cutting (excerpted from
@@ -60,12 +58,12 @@ import org.apache.lucene.search.BooleanQuery.BooleanWeight;
 
 final class BooleanScorer extends Scorer {
   
-  private static final class BooleanScorerCollector extends Collector {
+  private static final class BooleanScorerSubCollector implements SubCollector {
     private BucketTable bucketTable;
     private int mask;
     private Scorer scorer;
     
-    public BooleanScorerCollector(int mask, BucketTable bucketTable) {
+    public BooleanScorerSubCollector(int mask, BucketTable bucketTable) {
       this.mask = mask;
       this.bucketTable = bucketTable;
     }
@@ -75,7 +73,6 @@ final class BooleanScorer extends Scorer {
       final BucketTable table = bucketTable;
       final int i = doc & BucketTable.MASK;
       final Bucket bucket = table.buckets[i];
-      
       if (bucket.doc != doc) {                    // invalid bucket
         bucket.doc = doc;                         // set doc
         bucket.score = scorer.score();            // initialize score
@@ -90,20 +87,19 @@ final class BooleanScorer extends Scorer {
         bucket.coord++;                           // increment coord
       }
     }
-    
+
     @Override
-    public void setNextReader(AtomicReaderContext context) {
-      // not needed by this implementation
+    public void done() throws IOException {
     }
-    
-    @Override
-    public void setScorer(Scorer scorer) {
-      this.scorer = scorer;
-    }
-    
+
     @Override
     public boolean acceptsDocsOutOfOrder() {
       return true;
+    }
+
+    @Override
+    public void setScorer(Scorer scorer) {
+      this.scorer = scorer;
     }
 
   }
@@ -167,8 +163,8 @@ final class BooleanScorer extends Scorer {
       }
     }
 
-    public Collector newCollector(int mask) {
-      return new BooleanScorerCollector(mask, this);
+    public SubCollector newSubCollector(int mask) {
+      return new BooleanScorerSubCollector(mask, this);
     }
 
     public int size() { return SIZE; }
@@ -179,11 +175,11 @@ final class BooleanScorer extends Scorer {
     // TODO: re-enable this if BQ ever sends us required clauses
     //public boolean required = false;
     public boolean prohibited;
-    public Collector collector;
+    public SubCollector collector;
     public SubScorer next;
 
     public SubScorer(Scorer scorer, boolean required, boolean prohibited,
-        Collector collector, SubScorer next) {
+        SubCollector collector, SubScorer next) {
       if (required) {
         throw new IllegalArgumentException("this scorer cannot handle required=true");
       }
@@ -215,7 +211,7 @@ final class BooleanScorer extends Scorer {
     if (optionalScorers != null && optionalScorers.size() > 0) {
       for (Scorer scorer : optionalScorers) {
         if (scorer.nextDoc() != NO_MORE_DOCS) {
-          scorers = new SubScorer(scorer, false, false, bucketTable.newCollector(0), scorers);
+          scorers = new SubScorer(scorer, false, false, bucketTable.newSubCollector(0), scorers);
         }
       }
     }
@@ -223,7 +219,7 @@ final class BooleanScorer extends Scorer {
     if (prohibitedScorers != null && prohibitedScorers.size() > 0) {
       for (Scorer scorer : prohibitedScorers) {
         if (scorer.nextDoc() != NO_MORE_DOCS) {
-          scorers = new SubScorer(scorer, false, true, bucketTable.newCollector(PROHIBITED_MASK), scorers);
+          scorers = new SubScorer(scorer, false, true, bucketTable.newSubCollector(PROHIBITED_MASK), scorers);
         }
       }
     }
@@ -236,7 +232,7 @@ final class BooleanScorer extends Scorer {
 
   // firstDocID is ignored since nextDoc() initializes 'current'
   @Override
-  public boolean score(Collector collector, int max, int firstDocID) throws IOException {
+  public boolean score(SubCollector collector, int max, int firstDocID) throws IOException {
     // Make sure it's only BooleanScorer that calls us:
     assert firstDocID == -1;
     boolean more;
@@ -335,7 +331,7 @@ final class BooleanScorer extends Scorer {
   }
 
   @Override
-  public void score(Collector collector) throws IOException {
+  public void score(SubCollector collector) throws IOException {
     score(collector, Integer.MAX_VALUE, -1);
   }
   

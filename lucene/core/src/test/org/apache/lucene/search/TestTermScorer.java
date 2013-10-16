@@ -84,7 +84,7 @@ public class TestTermScorer extends LuceneTestCase {
     final List<TestHit> docs = new ArrayList<TestHit>();
     // must call next first
     
-    ts.score(new Collector() {
+    ts.score(new SerialCollector() {
       private int base = 0;
       private Scorer scorer;
       

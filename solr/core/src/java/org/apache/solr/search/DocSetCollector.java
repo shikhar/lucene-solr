@@ -17,80 +17,113 @@ package org.apache.solr.search;
  * limitations under the License.
  */
 
-import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.SubCollector;
 import org.apache.lucene.util.OpenBitSet;
 
 import java.io.IOException;
 
-/**
- *
- */
+public class DocSetCollector implements Collector {
 
-public class DocSetCollector extends Collector {
-  int pos=0;
-  OpenBitSet bits;
-  final int maxDoc;
-  final int smallSetSize;
-  int base;
+  private final int smallSetSize;
+  private final int maxDoc;
+  private final Collector delegate;
+
 
   // in case there aren't that many hits, we may not want a very sparse
   // bit array.  Optimistically collect the first few docs in an array
   // in case there are only a few.
   final int[] scratch;
+  int pos = 0;
+
+  OpenBitSet bits;
 
   public DocSetCollector(int smallSetSize, int maxDoc) {
+    this(smallSetSize, maxDoc, null);
+  }
+
+  public DocSetCollector(int smallSetSize, int maxDoc, Collector delegate) {
     this.smallSetSize = smallSetSize;
     this.maxDoc = maxDoc;
     this.scratch = new int[smallSetSize];
-  }
-
-  @Override
-  public void collect(int doc) throws IOException {
-    doc += base;
-    // optimistically collect the first docs in an array
-    // in case the total number will be small enough to represent
-    // as a small set like SortedIntDocSet instead...
-    // Storing in this array will be quicker to convert
-    // than scanning through a potentially huge bit vector.
-    // FUTURE: when search methods all start returning docs in order, maybe
-    // we could have a ListDocSet() and use the collected array directly.
-    if (pos < scratch.length) {
-      scratch[pos]=doc;
-    } else {
-      // this conditional could be removed if BitSet was preallocated, but that
-      // would take up more memory, and add more GC time...
-      if (bits==null) bits = new OpenBitSet(maxDoc);
-      bits.fastSet(doc);
-    }
-
-    pos++;
+    this.delegate = delegate;
   }
 
   public DocSet getDocSet() {
-    if (pos<=scratch.length) {
+    if (pos <= scratch.length) {
       // assumes docs were collected in sorted order!
       return new SortedIntDocSet(scratch, pos);
     } else {
       // set the bits for ids that were collected in the array
-      for (int i=0; i<scratch.length; i++) bits.fastSet(scratch[i]);
-      return new BitDocSet(bits,pos);
+      for (int i = 0; i < scratch.length; i++) bits.fastSet(scratch[i]);
+      return new BitDocSet(bits, pos);
     }
   }
 
   @Override
-  public void setScorer(Scorer scorer) throws IOException {
+  public SubCollector subCollector(AtomicReaderContext context) throws IOException {
+    final SubCollector delegateSub = delegate != null ? delegate.subCollector(context) : null;
+    final int base = context.docBase;
+    return new SubCollector() {
+      @Override
+      public void setScorer(Scorer scorer) throws IOException {
+        if (delegateSub != null) {
+          delegateSub.setScorer(scorer);
+        }
+      }
+
+      @Override
+      public void collect(int doc) throws IOException {
+        if (delegateSub != null) {
+          delegateSub.collect(doc);
+        }
+
+        doc += base;
+        // optimistically collect the first docs in an array
+        // in case the total number will be small enough to represent
+        // as a small set like SortedIntDocSet instead...
+        // Storing in this array will be quicker to convert
+        // than scanning through a potentially huge bit vector.
+        // FUTURE: when search methods all start returning docs in order, maybe
+        // we could have a ListDocSet() and use the collected array directly.
+        if (pos < scratch.length) {
+          scratch[pos] = doc;
+        } else {
+          // this conditional could be removed if BitSet was preallocated, but that
+          // would take up more memory, and add more GC time...
+          if (bits == null) {
+            bits = new OpenBitSet(maxDoc);
+          }
+          bits.fastSet(doc);
+        }
+
+        pos++;
+      }
+
+      @Override
+      public void done() throws IOException {
+        if (delegateSub != null) {
+          delegateSub.done();
+        }
+      }
+
+      @Override
+      public boolean acceptsDocsOutOfOrder() {
+        return false;
+      }
+    };
   }
 
   @Override
-  public void setNextReader(AtomicReaderContext context) throws IOException {
-    this.base = context.docBase;
+  public void setParallelized() {
+    throw new UnsupportedOperationException();
   }
 
   @Override
-  public boolean acceptsDocsOutOfOrder() {
+  public boolean isParallelizable() {
     return false;
   }
+
 }

@@ -57,12 +57,12 @@ public abstract class Scorer extends DocsEnum {
   /** Scores and collects all matching documents.
    * @param collector The collector to which all matching documents are passed.
    */
-  public void score(Collector collector) throws IOException {
+  public void score(SubCollector subCollector) throws IOException {
     assert docID() == -1; // not started
-    collector.setScorer(this);
+    subCollector.setScorer(this);
     int doc;
     while ((doc = nextDoc()) != NO_MORE_DOCS) {
-      collector.collect(doc);
+      subCollector.collect(doc);
     }
   }
 
@@ -80,12 +80,12 @@ public abstract class Scorer extends DocsEnum {
    *          this method.
    * @return true if more matching documents may remain.
    */
-  public boolean score(Collector collector, int max, int firstDocID) throws IOException {
+  public boolean score(SubCollector subCollector, int max, int firstDocID) throws IOException {
     assert docID() == firstDocID;
-    collector.setScorer(this);
+    subCollector.setScorer(this);
     int doc;
     for (doc = firstDocID; doc < max; doc = nextDoc()) {
-      collector.collect(doc);
+      subCollector.collect(doc);
     }
     return doc != NO_MORE_DOCS;
   }

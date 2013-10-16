@@ -241,29 +241,22 @@ public class TestSort extends SolrTestCaseJ4 {
 
         final List<MyDoc> collectedDocs = new ArrayList<MyDoc>();
         // delegate and collect docs ourselves
-        Collector myCollector = new Collector() {
-          int docBase;
-
+        Collector myCollector = new WrappingCollector(topCollector) {
           @Override
-          public void setScorer(Scorer scorer) throws IOException {
-            topCollector.setScorer(scorer);
+          public WrappingSubCollector subCollector(AtomicReaderContext context) throws IOException {
+            final int docBase = context.docBase;
+            return new WrappingSubCollector(topCollector.subCollector(context)) {
+              @Override
+              public void collect(int doc) throws IOException {
+                delegate.collect(doc);
+                collectedDocs.add(mydocs[doc + docBase]);
+              }
+            };
           }
 
           @Override
-          public void collect(int doc) throws IOException {
-            topCollector.collect(doc);
-            collectedDocs.add(mydocs[doc + docBase]);
-          }
-
-          @Override
-          public void setNextReader(AtomicReaderContext context) throws IOException {
-            topCollector.setNextReader(context);
-            docBase = context.docBase;
-          }
-
-          @Override
-          public boolean acceptsDocsOutOfOrder() {
-            return topCollector.acceptsDocsOutOfOrder();
+          public boolean isParallelizable() {
+            return false;
           }
         };
 

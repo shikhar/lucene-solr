@@ -29,8 +29,7 @@ import java.io.IOException;
  * exceeded, the search thread is stopped by throwing a
  * {@link TimeExceededException}.
  */
-public class TimeLimitingCollector extends Collector {
-
+public class TimeLimitingCollector implements Collector {
 
   /** Thrown when elapsed search time exceeds allowed search time. */
   @SuppressWarnings("serial")
@@ -64,7 +63,6 @@ public class TimeLimitingCollector extends Collector {
   private final Counter clock;
   private final long ticksAllowed;
   private boolean greedy = false;
-  private int docBase;
 
   /**
    * Create a TimeLimitedCollector wrapper over another {@link Collector} with a specified timeout.
@@ -78,10 +76,10 @@ public class TimeLimitingCollector extends Collector {
     this.clock = clock;
     this.ticksAllowed = ticksAllowed;
   }
-  
+
   /**
-   * Sets the baseline for this collector. By default the collectors baseline is 
-   * initialized once the first reader is passed to the collector. 
+   * Sets the baseline for this collector. By default the collectors baseline is
+   * initialized once the first reader is passed to the collector.
    * To include operations executed in prior to the actual document collection
    * set the baseline through this method in your prelude.
    * <p>
@@ -95,13 +93,13 @@ public class TimeLimitingCollector extends Collector {
    *   indexSearcher.search(query, collector);
    * </pre>
    * </p>
-   * @see #setBaseline() 
+   * @see #setBaseline()
    */
   public void setBaseline(long clockTime) {
     t0 = clockTime;
     timeout = t0 + ticksAllowed;
   }
-  
+
   /**
    * Syntactic sugar for {@link #setBaseline(long)} using {@link Counter#get()}
    * on the clock passed to the constructor.
@@ -109,7 +107,7 @@ public class TimeLimitingCollector extends Collector {
   public void setBaseline() {
     setBaseline(clock.get());
   }
-  
+
   /**
    * Checks if this time limited collector is greedy in collecting the last hit.
    * A non greedy collector, upon a timeout, would throw a {@link TimeExceededException} 
@@ -130,48 +128,64 @@ public class TimeLimitingCollector extends Collector {
   public void setGreedy(boolean greedy) {
     this.greedy = greedy;
   }
-  
-  /**
-   * Calls {@link Collector#collect(int)} on the decorated {@link Collector}
-   * unless the allowed time has passed, in which case it throws an exception.
-   * 
-   * @throws TimeExceededException
-   *           if the time allowed has exceeded.
-   */
+
   @Override
-  public void collect(final int doc) throws IOException {
-    final long time = clock.get();
-    if (timeout < time) {
-      if (greedy) {
-        //System.out.println(this+"  greedy: before failing, collecting doc: "+(docBase + doc)+"  "+(time-t0));
-        collector.collect(doc);
-      }
-      //System.out.println(this+"  failing on:  "+(docBase + doc)+"  "+(time-t0));
-      throw new TimeExceededException( timeout-t0, time-t0, docBase + doc );
-    }
-    //System.out.println(this+"  collecting: "+(docBase + doc)+"  "+(time-t0));
-    collector.collect(doc);
-  }
-  
-  @Override
-  public void setNextReader(AtomicReaderContext context) throws IOException {
-    collector.setNextReader(context);
-    this.docBase = context.docBase;
+  public SubCollector subCollector(final AtomicReaderContext context) throws IOException {
     if (Long.MIN_VALUE == t0) {
       setBaseline();
     }
-  }
-  
-  @Override
-  public void setScorer(Scorer scorer) throws IOException {
-    collector.setScorer(scorer);
+    final int docBase = context.docBase;
+    final SubCollector sub = collector.subCollector(context);
+    return new SubCollector() {
+      @Override
+      public void setScorer(Scorer scorer) throws IOException {
+        sub.setScorer(scorer);
+      }
+
+      /**
+       * Calls {@link org.apache.lucene.search.Collector#collect(int)} on the decorated {@link org.apache.lucene.search.Collector}
+       * unless the allowed time has passed, in which case it throws an exception.
+       *
+       * @throws org.apache.lucene.search.TimeLimitingCollector.TimeExceededException
+       *           if the time allowed has exceeded.
+       */
+      @Override
+      public void collect(int doc) throws IOException {
+        final long time = clock.get();
+        if (timeout < time) {
+          if (greedy) {
+            //System.out.println(this+"  greedy: before failing, collecting doc: "+(docBase + doc)+"  "+(time-t0));
+            sub.collect(doc);
+          }
+          //System.out.println(this+"  failing on:  "+(docBase + doc)+"  "+(time-t0));
+          throw new TimeExceededException( timeout-t0, time-t0, docBase + doc );
+        }
+        //System.out.println(this+"  collecting: "+(docBase + doc)+"  "+(time-t0));
+        sub.collect(doc);
+      }
+
+      @Override
+      public void done() throws IOException {
+        sub.done();
+      }
+
+      @Override
+      public boolean acceptsDocsOutOfOrder() {
+        return sub.acceptsDocsOutOfOrder();
+      }
+    };
   }
 
   @Override
-  public boolean acceptsDocsOutOfOrder() {
-    return collector.acceptsDocsOutOfOrder();
+  public void setParallelized() {
+    collector.setParallelized();
   }
-  
+
+  @Override
+  public boolean isParallelizable() {
+    return collector.isParallelizable();
+  }
+
   /**
    * This is so the same timer can be used with a multi-phase search process such as grouping. 
    * We don't want to create a new TimeLimitingCollector for each phase because that would 

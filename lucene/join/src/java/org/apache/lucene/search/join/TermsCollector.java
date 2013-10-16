@@ -25,6 +25,7 @@ import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.FieldCache;
 import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.SerialCollector;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefHash;
 
@@ -33,7 +34,7 @@ import org.apache.lucene.util.BytesRefHash;
  *
  * @lucene.experimental
  */
-abstract class TermsCollector extends Collector {
+abstract class TermsCollector extends SerialCollector {
 
   final String field;
   final BytesRefHash collectorTerms = new BytesRefHash();

@@ -65,13 +65,10 @@ public class TestSubScorerFreqs extends LuceneTestCase {
     dir = null;
   }
 
-  private static class CountingCollector extends Collector {
-    private final Collector other;
-    private int docBase;
+  private static class CountingCollector extends WrappingCollector {
 
     public final Map<Integer, Map<Query, Float>> docCounts = new HashMap<Integer, Map<Query, Float>>();
 
-    private final Map<Query, Scorer> subScorers = new HashMap<Query, Scorer>();
     private final Set<String> relationships;
 
     public CountingCollector(Collector other) {
@@ -79,48 +76,50 @@ public class TestSubScorerFreqs extends LuceneTestCase {
     }
 
     public CountingCollector(Collector other, Set<String> relationships) {
-      this.other = other;
+      super(other);
       this.relationships = relationships;
     }
 
     @Override
-    public void setScorer(Scorer scorer) throws IOException {
-      other.setScorer(scorer);
-      subScorers.clear();
-      setSubScorers(scorer, "TOP");
-    }
-    
-    public void setSubScorers(Scorer scorer, String relationship) {
-      for (ChildScorer child : scorer.getChildren()) {
-        if (relationships.contains(child.relationship)) {
-          setSubScorers(child.child, child.relationship);
+    public WrappingSubCollector subCollector(AtomicReaderContext context) throws IOException {
+      final int docBase = context.docBase;
+      return new WrappingSubCollector(delegate.subCollector(context)) {
+
+        private final Map<Query, Scorer> subScorers = new HashMap<Query, Scorer>();
+
+        private void setSubScorers(Scorer scorer) {
+          for (ChildScorer child : scorer.getChildren()) {
+            if (relationships.contains(child.relationship)) {
+              setSubScorers(child.child);
+            }
+          }
+          subScorers.put(scorer.getWeight().getQuery(), scorer);
         }
-      }
-      subScorers.put(scorer.getWeight().getQuery(), scorer);
+
+        @Override
+        public void setScorer(Scorer scorer) throws IOException {
+          delegate.setScorer(scorer);
+          setSubScorers(scorer);
+        }
+
+        @Override
+        public void collect(int doc) throws IOException {
+          final Map<Query, Float> freqs = new HashMap<Query, Float>();
+          for (Map.Entry<Query, Scorer> ent : subScorers.entrySet()) {
+            Scorer value = ent.getValue();
+            int matchId = value.docID();
+            freqs.put(ent.getKey(), matchId == doc ? value.freq() : 0.0f);
+          }
+          docCounts.put(doc + docBase, freqs);
+          delegate.collect(doc);
+        }
+
+      };
     }
 
     @Override
-    public void collect(int doc) throws IOException {
-      final Map<Query, Float> freqs = new HashMap<Query, Float>();
-      for (Map.Entry<Query, Scorer> ent : subScorers.entrySet()) {
-        Scorer value = ent.getValue();
-        int matchId = value.docID();
-        freqs.put(ent.getKey(), matchId == doc ? value.freq() : 0.0f);
-      }
-      docCounts.put(doc + docBase, freqs);
-      other.collect(doc);
-    }
-
-    @Override
-    public void setNextReader(AtomicReaderContext context)
-        throws IOException {
-      docBase = context.docBase;
-      other.setNextReader(context);
-    }
-
-    @Override
-    public boolean acceptsDocsOutOfOrder() {
-      return other.acceptsDocsOutOfOrder();
+    public boolean isParallelizable() {
+      return false;
     }
   }
 

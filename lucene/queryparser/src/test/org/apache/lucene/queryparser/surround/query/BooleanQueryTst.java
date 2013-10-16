@@ -29,6 +29,7 @@ import org.apache.lucene.search.Query;
 
 import org.apache.lucene.queryparser.surround.parser.QueryParser;
 
+import org.apache.lucene.search.SerialCollector;
 import org.junit.Assert;
 
 public class BooleanQueryTst {
@@ -57,7 +58,7 @@ public class BooleanQueryTst {
   
   public void setVerbose(boolean verbose) {this.verbose = verbose;}
 
-  class TestCollector extends Collector { // FIXME: use check hits from Lucene tests
+  class TestCollector extends SerialCollector { // FIXME: use check hits from Lucene tests
     int totalMatched;
     boolean[] encountered;
     private Scorer scorer = null;

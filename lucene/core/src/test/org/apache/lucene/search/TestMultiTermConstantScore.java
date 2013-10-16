@@ -226,7 +226,7 @@ public class TestMultiTermConstantScore extends BaseTestRangeFilter {
     search.setSimilarity(new DefaultSimilarity());
     Query q = csrq("data", "1", "6", T, T);
     q.setBoost(100);
-    search.search(q, null, new Collector() {
+    search.search(q, null, new SerialCollector() {
       private int base = 0;
       private Scorer scorer;
       @Override

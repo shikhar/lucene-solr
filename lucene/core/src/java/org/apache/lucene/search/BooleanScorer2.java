@@ -283,7 +283,7 @@ class BooleanScorer2 extends Scorer {
    * @param collector The collector to which all matching documents are passed through.
    */
   @Override
-  public void score(Collector collector) throws IOException {
+  public void score(SubCollector collector) throws IOException {
     collector.setScorer(this);
     while ((doc = countingSumScorer.nextDoc()) != NO_MORE_DOCS) {
       collector.collect(doc);
@@ -291,7 +291,7 @@ class BooleanScorer2 extends Scorer {
   }
   
   @Override
-  public boolean score(Collector collector, int max, int firstDocID) throws IOException {
+  public boolean score(SubCollector collector, int max, int firstDocID) throws IOException {
     doc = firstDocID;
     collector.setScorer(this);
     while (doc < max) {

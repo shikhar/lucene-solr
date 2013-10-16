@@ -47,7 +47,7 @@ import java.util.List;
  *
  * @lucene.experimental
  */
-public abstract class CachingCollector extends Collector {
+public abstract class CachingCollector extends SerialCollector {
   
   // Max out at 512K arrays
   private static final int MAX_ARRAY_SIZE = 512 * 1024;
@@ -57,10 +57,12 @@ public abstract class CachingCollector extends Collector {
   private static class SegStart {
     public final AtomicReaderContext readerContext;
     public final int end;
+    public final boolean acceptsDocsOutOfOrder;
 
-    public SegStart(AtomicReaderContext readerContext, int end) {
+    public SegStart(AtomicReaderContext readerContext, int end, boolean acceptsDocsOutOfOrder) {
       this.readerContext = readerContext;
       this.end = end;
+      this.acceptsDocsOutOfOrder = acceptsDocsOutOfOrder;
     }
   }
   
@@ -128,7 +130,7 @@ public abstract class CachingCollector extends Collector {
         // Cache was too large
         cachedScorer.score = scorer.score();
         cachedScorer.doc = doc;
-        other.collect(doc);
+        otherSub.collect(doc);
         return;
       }
 
@@ -154,7 +156,7 @@ public abstract class CachingCollector extends Collector {
             cachedScores.clear();
             cachedScorer.score = scorer.score();
             cachedScorer.doc = doc;
-            other.collect(doc);
+            otherSub.collect(doc);
             return;
           }
         }
@@ -170,20 +172,22 @@ public abstract class CachingCollector extends Collector {
       cachedScorer.score = curScores[upto] = scorer.score();
       upto++;
       cachedScorer.doc = doc;
-      other.collect(doc);
+      otherSub.collect(doc);
     }
 
     @Override
-    public void replay(Collector other) throws IOException {
-      replayInit(other);
-      
+    public void replay(Collector replayTargetCollector) throws IOException {
+      checkCached();
+
       int curUpto = 0;
       int curBase = 0;
       int chunkUpto = 0;
       curDocs = EMPTY_INT_ARRAY;
+
       for (SegStart seg : cachedSegs) {
-        other.setNextReader(seg.readerContext);
-        other.setScorer(cachedScorer);
+        final SubCollector replayTargetSub = replayTargetCollector.subCollector(seg.readerContext);
+        checkOrdering(replayTargetSub, seg);
+        replayTargetSub.setScorer(cachedScorer);
         while (curBase + curUpto < seg.end) {
           if (curUpto == curDocs.length) {
             curBase += curDocs.length;
@@ -194,15 +198,17 @@ public abstract class CachingCollector extends Collector {
           }
           cachedScorer.score = curScores[curUpto];
           cachedScorer.doc = curDocs[curUpto];
-          other.collect(curDocs[curUpto++]);
+          replayTargetSub.collect(curDocs[curUpto++]);
         }
+
+        replayTargetSub.done();
       }
     }
 
     @Override
     public void setScorer(Scorer scorer) throws IOException {
       this.scorer = scorer;
-      other.setScorer(cachedScorer);
+      otherSub.setScorer(cachedScorer);
     }
 
     @Override
@@ -232,7 +238,7 @@ public abstract class CachingCollector extends Collector {
 
       if (curDocs == null) {
         // Cache was too large
-        other.collect(doc);
+        otherSub.collect(doc);
         return;
       }
 
@@ -254,7 +260,7 @@ public abstract class CachingCollector extends Collector {
             curDocs = null;
             cachedSegs.clear();
             cachedDocs.clear();
-            other.collect(doc);
+            otherSub.collect(doc);
             return;
           }
         }
@@ -266,19 +272,21 @@ public abstract class CachingCollector extends Collector {
       
       curDocs[upto] = doc;
       upto++;
-      other.collect(doc);
+      otherSub.collect(doc);
     }
 
     @Override
-    public void replay(Collector other) throws IOException {
-      replayInit(other);
-      
+    public void replay(Collector replayTargetCollector) throws IOException {
+      checkCached();
+
       int curUpto = 0;
       int curbase = 0;
       int chunkUpto = 0;
       curDocs = EMPTY_INT_ARRAY;
+
       for (SegStart seg : cachedSegs) {
-        other.setNextReader(seg.readerContext);
+        final SubCollector replayTargetSub = replayTargetCollector.subCollector(seg.readerContext);
+        checkOrdering(replayTargetSub, seg);
         while (curbase + curUpto < seg.end) {
           if (curUpto == curDocs.length) {
             curbase += curDocs.length;
@@ -286,14 +294,16 @@ public abstract class CachingCollector extends Collector {
             chunkUpto++;
             curUpto = 0;
           }
-          other.collect(curDocs[curUpto++]);
+          replayTargetSub.collect(curDocs[curUpto++]);
         }
+
+        replayTargetSub.done();
       }
     }
 
     @Override
     public void setScorer(Scorer scorer) throws IOException {
-      other.setScorer(scorer);
+      otherSub.setScorer(scorer);
     }
 
     @Override
@@ -313,18 +323,18 @@ public abstract class CachingCollector extends Collector {
   // version -- if the wrapped Collector does not need
   // scores, it can avoid cachedScorer entirely.
   protected final Collector other;
-  
+  protected SubCollector otherSub;
+
   protected final int maxDocsToCache;
   protected final List<SegStart> cachedSegs = new ArrayList<SegStart>();
   protected final List<int[]> cachedDocs;
   
   private AtomicReaderContext lastReaderContext;
-  
+
   protected int[] curDocs;
   protected int upto;
   protected int base;
-  protected int lastDocBase;
-  
+
   /**
    * Creates a {@link CachingCollector} which does not wrap another collector.
    * The cached documents and scores can later be {@link #replay(Collector)
@@ -336,19 +346,35 @@ public abstract class CachingCollector extends Collector {
   public static CachingCollector create(final boolean acceptDocsOutOfOrder, boolean cacheScores, double maxRAMMB) {
     Collector other = new Collector() {
       @Override
-      public boolean acceptsDocsOutOfOrder() {
-        return acceptDocsOutOfOrder;
+      public SubCollector subCollector(AtomicReaderContext context) throws IOException {
+        return new SubCollector() {
+          @Override
+          public void setScorer(Scorer scorer) throws IOException {
+          }
+
+          @Override
+          public void collect(int doc) throws IOException {
+          }
+
+          @Override
+          public void done() throws IOException {
+          }
+
+          @Override
+          public boolean acceptsDocsOutOfOrder() {
+            return acceptDocsOutOfOrder;
+          }
+        };
       }
-      
-      @Override
-      public void setScorer(Scorer scorer) {}
 
       @Override
-      public void collect(int doc) {}
+      public void setParallelized() {
+      }
 
       @Override
-      public void setNextReader(AtomicReaderContext context) {}
-
+      public boolean isParallelizable() {
+        return true;
+      }
     };
     return create(other, cacheScores, maxRAMMB);
   }
@@ -415,7 +441,7 @@ public abstract class CachingCollector extends Collector {
   
   @Override
   public boolean acceptsDocsOutOfOrder() {
-    return other.acceptsDocsOutOfOrder();
+    return otherSub.acceptsDocsOutOfOrder();
   }
 
   public boolean isCached() {
@@ -424,30 +450,30 @@ public abstract class CachingCollector extends Collector {
 
   @Override  
   public void setNextReader(AtomicReaderContext context) throws IOException {
-    other.setNextReader(context);
-    if (lastReaderContext != null) {
-      cachedSegs.add(new SegStart(lastReaderContext, base+upto));
-    }
     lastReaderContext = context;
+    otherSub = other.subCollector(context);
   }
 
-  /** Reused by the specialized inner classes. */
-  void replayInit(Collector other) {
+  @Override
+  public void done() throws IOException {
+    otherSub.done();
+    cachedSegs.add(new SegStart(lastReaderContext, base+upto, otherSub.acceptsDocsOutOfOrder()));
+    otherSub = null;
+    lastReaderContext = null;
+  }
+
+  void checkCached() {
     if (!isCached()) {
       throw new IllegalStateException("cannot replay: cache was cleared because too much RAM was required");
     }
-    
-    if (!other.acceptsDocsOutOfOrder() && this.other.acceptsDocsOutOfOrder()) {
+  }
+
+  void checkOrdering(SubCollector sub, SegStart seg) throws IOException {
+    if (!sub.acceptsDocsOutOfOrder() && seg.acceptsDocsOutOfOrder) {
       throw new IllegalArgumentException(
           "cannot replay: given collector does not support "
               + "out-of-order collection, while the wrapped collector does. "
               + "Therefore cached documents may be out-of-order.");
-    }
-    
-    //System.out.println("CC: replay totHits=" + (upto + base));
-    if (lastReaderContext != null) {
-      cachedSegs.add(new SegStart(lastReaderContext, base+upto));
-      lastReaderContext = null;
     }
   }
 

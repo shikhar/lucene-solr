@@ -19,6 +19,7 @@ package org.apache.lucene.search.grouping;
 
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.SerialCollector;
 
 import java.io.IOException;
 import java.util.*;
@@ -28,7 +29,7 @@ import java.util.*;
  *
  * @lucene.experimental
  */
-public abstract class AbstractDistinctValuesCollector<GC extends AbstractDistinctValuesCollector.GroupCount<?>> extends Collector {
+public abstract class AbstractDistinctValuesCollector<GC extends AbstractDistinctValuesCollector.GroupCount<?>> extends SerialCollector {
 
   /**
    * Returns all unique values for each top N group.

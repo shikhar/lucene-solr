@@ -18,7 +18,6 @@ package org.apache.lucene.facet.search;
  */
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
@@ -26,18 +25,19 @@ import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.Scorer.ChildScorer;
 import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.SubCollector;
 import org.apache.lucene.search.Weight;
 
 /** Collector that scrutinizes each hit to determine if it
  *  passed all constraints (a true hit) or if it missed
  *  exactly one dimension (a near-miss, to count for
  *  drill-sideways counts on that dimension). */
-class DrillSidewaysCollector extends Collector {
+class DrillSidewaysCollector implements Collector {
 
   private final Collector hitCollector;
   private final Collector drillDownCollector;
   private final Collector[] drillSidewaysCollectors;
-  private final Scorer[] subScorers;
+  private final int dimsSize;
   private final int exactCount;
 
   // Maps Weight to either -1 (mainQuery) or to integer
@@ -46,110 +46,21 @@ class DrillSidewaysCollector extends Collector {
   // right scorers:
   private final Map<Weight,Integer> weightToIndex = new IdentityHashMap<Weight,Integer>();
 
-  private Scorer mainScorer;
-
-  public DrillSidewaysCollector(Collector hitCollector, Collector drillDownCollector, Collector[] drillSidewaysCollectors,
-                                Map<String,Integer> dims) {
+  public DrillSidewaysCollector(Collector hitCollector,
+                                Collector drillDownCollector,
+                                Collector[] drillSidewaysCollectors,
+                                Map<String, Integer> dims) {
     this.hitCollector = hitCollector;
     this.drillDownCollector = drillDownCollector;
     this.drillSidewaysCollectors = drillSidewaysCollectors;
-    subScorers = new Scorer[dims.size()];
-
-    if (dims.size() == 1) {
+    this.dimsSize = dims.size();
+    if (dimsSize == 1) {
       // When we have only one dim, we insert the
       // MatchAllDocsQuery, bringing the clause count to
       // 2:
       exactCount = 2;
     } else {
-      exactCount = dims.size();
-    }
-  }
-
-  @Override
-  public void collect(int doc) throws IOException {
-    //System.out.println("collect doc=" + doc + " main.freq=" + mainScorer.freq() + " main.doc=" + mainScorer.docID() + " exactCount=" + exactCount);
-      
-    if (mainScorer == null) {
-      // This segment did not have any docs with any
-      // drill-down field & value:
-      return;
-    }
-
-    if (mainScorer.freq() == exactCount) {
-      // All sub-clauses from the drill-down filters
-      // matched, so this is a "real" hit, so we first
-      // collect in both the hitCollector and the
-      // drillDown collector:
-      //System.out.println("  hit " + drillDownCollector);
-      hitCollector.collect(doc);
-      if (drillDownCollector != null) {
-        drillDownCollector.collect(doc);
-      }
-
-      // Also collect across all drill-sideways counts so
-      // we "merge in" drill-down counts for this
-      // dimension.
-      for(int i=0;i<subScorers.length;i++) {
-        // This cannot be null, because it was a hit,
-        // meaning all drill-down dims matched, so all
-        // dims must have non-null scorers:
-        assert subScorers[i] != null;
-        int subDoc = subScorers[i].docID();
-        assert subDoc == doc;
-        drillSidewaysCollectors[i].collect(doc);
-      }
-
-    } else {
-      boolean found = false;
-      for(int i=0;i<subScorers.length;i++) {
-        if (subScorers[i] == null) {
-          // This segment did not have any docs with this
-          // drill-down field & value:
-          drillSidewaysCollectors[i].collect(doc);
-          assert allMatchesFrom(i+1, doc);
-          found = true;
-          break;
-        }
-        int subDoc = subScorers[i].docID();
-        //System.out.println("  i=" + i + " sub: " + subDoc);
-        if (subDoc != doc) {
-          //System.out.println("  +ds[" + i + "]");
-          assert subDoc > doc: "subDoc=" + subDoc + " doc=" + doc;
-          drillSidewaysCollectors[i].collect(doc);
-          assert allMatchesFrom(i+1, doc);
-          found = true;
-          break;
-        }
-      }
-      assert found;
-    }
-  }
-
-  // Only used by assert:
-  private boolean allMatchesFrom(int startFrom, int doc) {
-    for(int i=startFrom;i<subScorers.length;i++) {
-      assert subScorers[i].docID() == doc;
-    }
-    return true;
-  }
-
-  @Override
-  public boolean acceptsDocsOutOfOrder() {
-    // We actually could accept docs out of order, but, we
-    // need to force BooleanScorer2 so that the
-    // sub-scorers are "on" each docID we are collecting:
-    return false;
-  }
-
-  @Override
-  public void setNextReader(AtomicReaderContext leaf) throws IOException {
-    //System.out.println("DS.setNextReader reader=" + leaf.reader());
-    hitCollector.setNextReader(leaf);
-    if (drillDownCollector != null) {
-      drillDownCollector.setNextReader(leaf);
-    }
-    for(Collector dsc : drillSidewaysCollectors) {
-      dsc.setNextReader(leaf);
+      exactCount = dimsSize;
     }
   }
 
@@ -158,31 +69,169 @@ class DrillSidewaysCollector extends Collector {
     weightToIndex.put(weight, index);
   }
 
-  private void findScorers(Scorer scorer) {
-    Integer index = weightToIndex.get(scorer.getWeight());
-    if (index != null) {
-      if (index.intValue() == -1) {
-        mainScorer = scorer;
-      } else {
-        subScorers[index] = scorer;
+  private final class DrillSidewaysSubCollector implements SubCollector {
+
+    private final SubCollector hitSubCollector;
+    private final SubCollector drillDownSubCollector;
+    private final SubCollector[] drillSideWaysSubCollectors;
+
+    private Scorer mainScorer;
+    private Scorer[] subScorers;
+
+    private DrillSidewaysSubCollector(AtomicReaderContext leaf) throws IOException {
+      hitSubCollector = hitCollector.subCollector(leaf);
+      drillDownSubCollector = (drillDownCollector != null) ? drillDownCollector.subCollector(leaf) : null;
+      drillSideWaysSubCollectors = new SubCollector[drillSidewaysCollectors.length];
+      for (int i = 0; i < drillSidewaysCollectors.length; i++) {
+        drillSideWaysSubCollectors[i] = drillSidewaysCollectors[i].subCollector(leaf);
       }
     }
-    for(ChildScorer child : scorer.getChildren()) {
-      findScorers(child.child);
+
+    private void findScorers(Scorer scorer) {
+      Integer index = weightToIndex.get(scorer.getWeight());
+      if (index != null) {
+        if (index.intValue() == -1) {
+          mainScorer = scorer;
+        } else {
+          subScorers[index] = scorer;
+        }
+      }
+      for (ChildScorer child : scorer.getChildren()) {
+        findScorers(child.child);
+      }
+    }
+
+    // Only used by assert:
+    private boolean allMatchesFrom(int startFrom, int doc) {
+      for(int i = startFrom; i < subScorers.length; i++) {
+        assert subScorers[i].docID() == doc;
+      }
+      return true;
+    }
+
+    @Override
+    public void setScorer(Scorer scorer) throws IOException {
+      subScorers = new Scorer[dimsSize];
+      findScorers(scorer);
+      hitSubCollector.setScorer(scorer);
+      if (drillDownSubCollector != null) {
+        drillDownSubCollector.setScorer(scorer);
+      }
+      for (SubCollector dsc : drillSideWaysSubCollectors) {
+        dsc.setScorer(scorer);
+      }
+    }
+
+    @Override
+    public void collect(int doc) throws IOException {
+      //System.out.println("collect doc=" + doc + " main.freq=" + mainScorer.freq() + " main.doc=" + mainScorer.docID() + " exactCount=" + exactCount);
+
+      if (mainScorer == null) {
+        // This segment did not have any docs with any
+        // drill-down field & value:
+        return;
+      }
+
+      if (mainScorer.freq() == exactCount) {
+        // All sub-clauses from the drill-down filters
+        // matched, so this is a "real" hit, so we first
+        // collect in both the hitCollector and the
+        // drillDown collector:
+        //System.out.println("  hit " + drillDownCollector);
+        hitSubCollector.collect(doc);
+        if (drillDownSubCollector != null) {
+          drillDownSubCollector.collect(doc);
+        }
+
+        // Also collect across all drill-sideways counts so
+        // we "merge in" drill-down counts for this
+        // dimension.
+        for(int i=0;i<subScorers.length;i++) {
+          // This cannot be null, because it was a hit,
+          // meaning all drill-down dims matched, so all
+          // dims must have non-null scorers:
+          assert subScorers[i] != null;
+          int subDoc = subScorers[i].docID();
+          assert subDoc == doc;
+          drillSideWaysSubCollectors[i].collect(doc);
+        }
+
+      } else {
+        boolean found = false;
+        for(int i=0;i<subScorers.length;i++) {
+          if (subScorers[i] == null) {
+            // This segment did not have any docs with this
+            // drill-down field & value:
+            drillSideWaysSubCollectors[i].collect(doc);
+            assert allMatchesFrom(i+1, doc);
+            found = true;
+            break;
+          }
+          int subDoc = subScorers[i].docID();
+          //System.out.println("  i=" + i + " sub: " + subDoc);
+          if (subDoc != doc) {
+            //System.out.println("  +ds[" + i + "]");
+            assert subDoc > doc: "subDoc=" + subDoc + " doc=" + doc;
+            drillSideWaysSubCollectors[i].collect(doc);
+            assert allMatchesFrom(i+1, doc);
+            found = true;
+            break;
+          }
+        }
+        assert found;
+      }
+    }
+
+    @Override
+    public void done() throws IOException {
+      hitSubCollector.done();
+      if (drillDownSubCollector != null) {
+        drillDownSubCollector.done();
+      }
+      for (int i = 0; i < drillSideWaysSubCollectors.length; i++) {
+        drillSideWaysSubCollectors[i].done();
+      }
+    }
+
+    @Override
+    public boolean acceptsDocsOutOfOrder() {
+      // We actually could accept docs out of order, but, we
+      // need to force BooleanScorer2 so that the
+      // sub-scorers are "on" each docID we are collecting:
+      return false;
+    }
+
+  }
+
+  @Override
+  public SubCollector subCollector(AtomicReaderContext leaf) throws IOException {
+    return new DrillSidewaysSubCollector(leaf);
+  }
+
+  @Override
+  public void setParallelized() {
+    hitCollector.setParallelized();
+    if (drillDownCollector != null) {
+      drillDownCollector.setParallelized();
+    }
+    for (int i = 0; i < drillSidewaysCollectors.length; i++) {
+      drillSidewaysCollectors[i].setParallelized();
     }
   }
 
   @Override
-  public void setScorer(Scorer scorer) throws IOException {
-    mainScorer = null;
-    Arrays.fill(subScorers, null);
-    findScorers(scorer);
-    hitCollector.setScorer(scorer);
-    if (drillDownCollector != null) {
-      drillDownCollector.setScorer(scorer);
+  public boolean isParallelizable() {
+    if (!hitCollector.isParallelizable()) {
+      return false;
     }
-    for(Collector dsc : drillSidewaysCollectors) {
-      dsc.setScorer(scorer);
+    if (drillDownCollector != null && drillDownCollector.isParallelizable()) {
+      return false;
     }
+    for (int i = 0; i < drillSidewaysCollectors.length; i++) {
+      if (!drillSidewaysCollectors[i].isParallelizable()) {
+        return false;
+      }
+    }
+    return true;
   }
 }

@@ -48,9 +48,11 @@ import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.SerialCollector;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopScoreDocCollector;
+import org.apache.lucene.search.WrappingCollector;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
@@ -300,30 +302,28 @@ public class TestJoinUtil extends LuceneTestCase {
         // Need to know all documents that have matches. TopDocs doesn't give me that and then I'd be also testing TopDocsCollector...
         final FixedBitSet actualResult = new FixedBitSet(indexSearcher.getIndexReader().maxDoc());
         final TopScoreDocCollector topScoreDocCollector = TopScoreDocCollector.create(10, false);
-        indexSearcher.search(joinQuery, new Collector() {
-
-          int docBase;
-
+        indexSearcher.search(joinQuery, new WrappingCollector(topScoreDocCollector) {
           @Override
-          public void collect(int doc) throws IOException {
-            actualResult.set(doc + docBase);
-            topScoreDocCollector.collect(doc);
+          public WrappingSubCollector subCollector(AtomicReaderContext context) throws IOException {
+            final int docBase = context.docBase;
+            return new WrappingSubCollector(topScoreDocCollector.subCollector(context)) {
+
+              @Override
+              public void collect(int doc) throws IOException {
+                actualResult.set(doc + docBase);
+                delegate.collect(doc);
+              }
+
+              @Override
+              public boolean acceptsDocsOutOfOrder() {
+                return scoreDocsInOrder;
+              }
+            };
           }
 
           @Override
-          public void setNextReader(AtomicReaderContext context) {
-            docBase = context.docBase;
-            topScoreDocCollector.setNextReader(context);
-          }
-
-          @Override
-          public void setScorer(Scorer scorer) throws IOException {
-            topScoreDocCollector.setScorer(scorer);
-          }
-
-          @Override
-          public boolean acceptsDocsOutOfOrder() {
-            return scoreDocsInOrder;
+          public boolean isParallelizable() {
+            return false;
           }
         });
         // Asserting bit set...
@@ -465,7 +465,7 @@ public class TestJoinUtil extends LuceneTestCase {
       }
       final Map<BytesRef, JoinScore> joinValueToJoinScores = new HashMap<BytesRef, JoinScore>();
       if (multipleValuesPerDocument) {
-        fromSearcher.search(new TermQuery(new Term("value", uniqueRandomValue)), new Collector() {
+        fromSearcher.search(new TermQuery(new Term("value", uniqueRandomValue)), new SerialCollector() {
 
           private Scorer scorer;
           private SortedSetDocValues docTermOrds;
@@ -501,7 +501,7 @@ public class TestJoinUtil extends LuceneTestCase {
           }
         });
       } else {
-        fromSearcher.search(new TermQuery(new Term("value", uniqueRandomValue)), new Collector() {
+        fromSearcher.search(new TermQuery(new Term("value", uniqueRandomValue)), new SerialCollector() {
 
           private Scorer scorer;
           private BinaryDocValues terms;
@@ -568,7 +568,7 @@ public class TestJoinUtil extends LuceneTestCase {
             }
           }
         } else {
-          toSearcher.search(new MatchAllDocsQuery(), new Collector() {
+          toSearcher.search(new MatchAllDocsQuery(), new SerialCollector() {
 
             private SortedSetDocValues docTermOrds;
             private final BytesRef scratch = new BytesRef();
@@ -606,7 +606,7 @@ public class TestJoinUtil extends LuceneTestCase {
           });
         }
       } else {
-        toSearcher.search(new MatchAllDocsQuery(), new Collector() {
+        toSearcher.search(new MatchAllDocsQuery(), new SerialCollector() {
 
           private BinaryDocValues terms;
           private int docBase;

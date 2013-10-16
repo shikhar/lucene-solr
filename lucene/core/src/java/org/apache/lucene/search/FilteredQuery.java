@@ -155,7 +155,7 @@ public class FilteredQuery extends Query {
     
     // optimization: we are topScorer and collect directly
     @Override
-    public void score(Collector collector) throws IOException {
+    public void score(SubCollector collector) throws IOException {
       // the normalization trick already applies the boost of this query,
       // so we can use the wrapped scorer directly:
       collector.setScorer(scorer);
@@ -239,7 +239,7 @@ public class FilteredQuery extends Query {
     
     // optimization: we are topScorer and collect directly using short-circuited algo
     @Override
-    public final void score(Collector collector) throws IOException {
+    public final void score(SubCollector collector) throws IOException {
       // the normalization trick already applies the boost of this query,
       // so we can use the wrapped scorer directly:
       collector.setScorer(scorer);

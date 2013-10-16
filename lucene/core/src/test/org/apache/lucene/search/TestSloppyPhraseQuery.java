@@ -175,7 +175,7 @@ public class TestSloppyPhraseQuery extends LuceneTestCase {
     return query;
   }
 
-  static class MaxFreqCollector extends Collector {
+  static class MaxFreqCollector extends SerialCollector {
     float max;
     int totalHits;
     Scorer scorer;
@@ -203,7 +203,7 @@ public class TestSloppyPhraseQuery extends LuceneTestCase {
   
   /** checks that no scores or freqs are infinite */
   private void assertSaneScoring(PhraseQuery pq, IndexSearcher searcher) throws Exception {
-    searcher.search(pq, new Collector() {
+    searcher.search(pq, new SerialCollector() {
       Scorer scorer;
       
       @Override

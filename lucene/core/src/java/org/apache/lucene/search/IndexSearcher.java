@@ -18,6 +18,7 @@ package org.apache.lucene.search;
  */
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
@@ -29,6 +30,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -85,8 +87,8 @@ public class IndexSearcher {
   /** used with executor - each slice holds a set of leafs executed within one thread */
   protected final LeafSlice[] leafSlices;
 
-  // These are only used for multi-threaded search
-  private final ExecutorService executor;
+  // This is used for parallel search
+  protected final ExecutorService executor;
 
   // the default Similarity
   private static final Similarity defaultSimilarity = new DefaultSimilarity();
@@ -160,7 +162,7 @@ public class IndexSearcher {
   public IndexSearcher(IndexReaderContext context) {
     this(context, null);
   }
-  
+
   /**
    * Expert: Creates an array of leaf slices each holding a subset of the given leaves.
    * Each {@link LeafSlice} is executed in a single thread. By default there
@@ -443,14 +445,14 @@ public class IndexSearcher {
           + after.doc + " limit=" + limit);
     }
     nDocs = Math.min(nDocs, limit);
-    
+
     if (executor == null) {
       return search(leafContexts, weight, after, nDocs);
     } else {
       final HitQueue hq = new HitQueue(nDocs, false);
       final Lock lock = new ReentrantLock();
       final ExecutionHelper<TopDocs> runner = new ExecutionHelper<TopDocs>(executor);
-    
+
       for (int i = 0; i < leafSlices.length; i++) { // search each sub
         runner.submit(new SearcherCallableNoSort(lock, this, leafSlices[i], weight, after, nDocs, hq));
       }
@@ -601,28 +603,69 @@ public class IndexSearcher {
    * @throws BooleanQuery.TooManyClauses If a query would exceed 
    *         {@link BooleanQuery#getMaxClauseCount()} clauses.
    */
-  protected void search(List<AtomicReaderContext> leaves, Weight weight, Collector collector)
+  protected void search(List<AtomicReaderContext> leaves, final Weight weight, final Collector collector)
       throws IOException {
 
-    // TODO: should we make this
-    // threaded...?  the Collector could be sync'd?
-    // always use single thread:
-    for (AtomicReaderContext ctx : leaves) { // search each subreader
+    final int numLeaves = leaves.size();
+    final boolean parallelize = executor != null && collector.isParallelizable() && numLeaves > 1;
+
+    final List<Future<SubCollector>> futures;
+    if (parallelize) {
+      futures = new ArrayList<Future<SubCollector>>(numLeaves);
+      collector.setParallelized();
+    } else {
+      futures = null;
+    }
+
+    for (final AtomicReaderContext ctx : leaves) { // search each subreader
+      final SubCollector sub;
       try {
-        collector.setNextReader(ctx);
+        sub = collector.subCollector(ctx);
       } catch (CollectionTerminatedException e) {
-        // there is no doc of interest in this reader context
-        // continue with the following leaf
-        continue;
+        continue; // there is no doc of interest in this reader context
       }
-      Scorer scorer = weight.scorer(ctx, !collector.acceptsDocsOutOfOrder(), true, ctx.reader().getLiveDocs());
-      if (scorer != null) {
+
+      if (parallelize) {
+        futures.add(executor.submit(new Callable<SubCollector>() {
+          @Override
+          public SubCollector call() throws IOException {
+            collect(ctx, weight, sub);
+            return sub;
+          }
+        }));
+      } else {
+        collect(ctx, weight, sub);
+        sub.done();
+      }
+    }
+
+    if (parallelize) {
+      for (Future<SubCollector> f: futures) {
+        final SubCollector sub;
         try {
-          scorer.score(collector);
-        } catch (CollectionTerminatedException e) {
-          // collection was terminated prematurely
-          // continue with the following leaf
+          sub = f.get();
+        } catch (InterruptedException e) {
+          throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+          final Throwable cause = e.getCause();
+          if (cause instanceof IOException) {
+            throw (IOException) cause;
+          } else {
+            throw new RuntimeException(cause);
+          }
         }
+        sub.done(); // SubCollector.done() is guaranteed to execute in the primary thread
+      }
+    }
+  }
+
+  private static void collect(AtomicReaderContext ctx, Weight weight, SubCollector sub) throws IOException {
+    final Scorer scorer = weight.scorer(ctx, !sub.acceptsDocsOutOfOrder(), true, ctx.reader().getLiveDocs());
+    if (scorer != null) {
+      try {
+        scorer.score(sub);
+      } catch (CollectionTerminatedException e) {
+        // collection was terminated prematurely
       }
     }
   }
@@ -701,7 +744,7 @@ public class IndexSearcher {
   }
 
   /**
-   * A thread subclass for searching a single searchable 
+   * A thread subclass for searching a single searchable
    */
   private static final class SearcherCallableNoSort implements Callable<TopDocs> {
 
@@ -728,7 +771,7 @@ public class IndexSearcher {
     public TopDocs call() throws IOException {
       final TopDocs docs = searcher.search(Arrays.asList(slice.leaves), weight, after, nDocs);
       final ScoreDoc[] scoreDocs = docs.scoreDocs;
-      //it would be so nice if we had a thread-safe insert 
+      //it would be so nice if we had a thread-safe insert
       lock.lock();
       try {
         for (int j = 0; j < scoreDocs.length; j++) { // merge scoreDocs into hq
@@ -746,7 +789,7 @@ public class IndexSearcher {
 
 
   /**
-   * A thread subclass for searching a single searchable 
+   * A thread subclass for searching a single searchable
    */
   private static final class SearcherCallableWithSort implements Callable<TopFieldDocs> {
 
@@ -783,7 +826,7 @@ public class IndexSearcher {
       public FakeScorer() {
         super(null);
       }
-    
+
       @Override
       public int advance(int target) {
         throw new UnsupportedOperationException("FakeScorer doesn't support advance(int)");
@@ -803,7 +846,7 @@ public class IndexSearcher {
       public int nextDoc() {
         throw new UnsupportedOperationException("FakeScorer doesn't support nextDoc()");
       }
-    
+
       @Override
       public float score() {
         return score;
@@ -826,13 +869,14 @@ public class IndexSearcher {
       try {
         final AtomicReaderContext ctx = slice.leaves[0];
         final int base = ctx.docBase;
-        hq.setNextReader(ctx);
-        hq.setScorer(fakeScorer);
+        final SubCollector subCollector = hq.subCollector(ctx);
+        subCollector.setScorer(fakeScorer);
         for(ScoreDoc scoreDoc : docs.scoreDocs) {
           fakeScorer.doc = scoreDoc.doc - base;
           fakeScorer.score = scoreDoc.score;
           hq.collect(scoreDoc.doc-base);
         }
+        subCollector.done();
 
         // Carry over maxScore from sub:
         if (doMaxScore && docs.getMaxScore() > hq.maxScore) {
