@@ -12,6 +12,7 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.Scorer;
 import org.apache.lucene.search.SerialCollector;
+import org.apache.lucene.search.SubCollector;
 import org.apache.lucene.util.ArrayUtil;
 import org.apache.lucene.util.FixedBitSet;
 
@@ -41,107 +42,90 @@ import org.apache.lucene.util.FixedBitSet;
  * 
  * @lucene.experimental
  */
-public abstract class FacetsCollector extends SerialCollector {
+public abstract class FacetsCollector implements Collector {
 
   private static final class DocsAndScoresCollector extends FacetsCollector {
 
-    private AtomicReaderContext context;
-    private Scorer scorer;
-    private FixedBitSet bits;
-    private int totalHits;
-    private float[] scores;
-    
     public DocsAndScoresCollector(FacetsAccumulator accumulator) {
       super(accumulator);
     }
-    
-    @Override
-    protected final void finish() {
-      if (bits != null) {
-        matchingDocs.add(new MatchingDocs(this.context, bits, totalHits, scores));
-        bits = null;
-        scores = null;
-        context = null;
-      }
-    }
-    
-    @Override
-    public final boolean acceptsDocsOutOfOrder() {
-      return false;
-    }
 
     @Override
-    public final void collect(int doc) throws IOException {
-      bits.set(doc);
-      if (totalHits >= scores.length) {
-        float[] newScores = new float[ArrayUtil.oversize(totalHits + 1, 4)];
-        System.arraycopy(scores, 0, newScores, 0, totalHits);
-        scores = newScores;
-      }
-      scores[totalHits] = scorer.score();
-      totalHits++;
-    }
+    protected SubCollector createSubCollector(final AtomicReaderContext context) throws IOException {
+      return new SubCollector() {
 
-    @Override
-    public final void setScorer(Scorer scorer) throws IOException {
-      this.scorer = scorer;
-    }
-    
-    @Override
-    protected final void doSetNextReader(AtomicReaderContext context) throws IOException {
-      if (bits != null) {
-        matchingDocs.add(new MatchingDocs(this.context, bits, totalHits, scores));
-      }
-      bits = new FixedBitSet(context.reader().maxDoc());
-      totalHits = 0;
-      scores = new float[64]; // some initial size
-      this.context = context;
-    }
+        final FixedBitSet bits = new FixedBitSet(context.reader().maxDoc());
+        int totalHits;
+        float[] scores = new float[64];
 
+        Scorer scorer;
+
+        @Override
+        public void setScorer(Scorer scorer) throws IOException {
+          this.scorer = scorer;
+        }
+
+        @Override
+        public final void collect(int doc) throws IOException {
+          bits.set(doc);
+          if (totalHits >= scores.length) {
+            float[] newScores = new float[ArrayUtil.oversize(totalHits + 1, 4)];
+            System.arraycopy(scores, 0, newScores, 0, totalHits);
+            scores = newScores;
+          }
+          scores[totalHits] = scorer.score();
+          totalHits++;
+        }
+
+        @Override
+        public final boolean acceptsDocsOutOfOrder() {
+          return false;
+        }
+
+        @Override
+        public void done() throws IOException {
+          matchingDocs.add(new MatchingDocs(context, bits, totalHits, scores));
+        }
+      };
+    }
   }
 
   private final static class DocsOnlyCollector extends FacetsCollector {
 
-    private AtomicReaderContext context;
-    private FixedBitSet bits;
-    private int totalHits;
-
     public DocsOnlyCollector(FacetsAccumulator accumulator) {
       super(accumulator);
     }
-    
-    @Override
-    protected final void finish() {
-      if (bits != null) {
-        matchingDocs.add(new MatchingDocs(this.context, bits, totalHits, null));
-        bits = null;
-        context = null;
-      }
-    }
-    
-    @Override
-    public final boolean acceptsDocsOutOfOrder() {
-      return true;
-    }
 
     @Override
-    public final void collect(int doc) throws IOException {
-      totalHits++;
-      bits.set(doc);
+    protected SubCollector createSubCollector(final AtomicReaderContext context) throws IOException {
+      return new SubCollector() {
+
+        final FixedBitSet bits = new FixedBitSet(context.reader().maxDoc());
+        int totalHits;
+
+        @Override
+        public void setScorer(Scorer scorer) throws IOException {
+        }
+
+        @Override
+        public final void collect(int doc) throws IOException {
+          totalHits++;
+          bits.set(doc);
+        }
+
+        @Override
+        public final boolean acceptsDocsOutOfOrder() {
+          return true;
+        }
+
+        @Override
+        public void done() throws IOException {
+          matchingDocs.add(new MatchingDocs(context, bits, totalHits, null));
+        }
+
+      };
     }
 
-    @Override
-    public final void setScorer(Scorer scorer) throws IOException {}
-    
-    @Override
-    protected final void doSetNextReader(AtomicReaderContext context) throws IOException {
-      if (bits != null) {
-        matchingDocs.add(new MatchingDocs(this.context, bits, totalHits, null));
-      }
-      bits = new FixedBitSet(context.reader().maxDoc());
-      totalHits = 0;
-      this.context = context;
-    }
   }
   
   /**
@@ -185,21 +169,15 @@ public abstract class FacetsCollector extends SerialCollector {
 
   private final FacetsAccumulator accumulator;
   private List<FacetResult> cachedResults;
-  
+
   protected final List<MatchingDocs> matchingDocs = new ArrayList<MatchingDocs>();
 
   protected FacetsCollector(FacetsAccumulator accumulator) {
     this.accumulator = accumulator;
   }
-  
-  /**
-   * Called when the Collector has finished, so that the last
-   * {@link MatchingDocs} can be added.
-   */
-  protected abstract void finish();
-  
-  /** Performs the actual work of {@link #setNextReader(AtomicReaderContext)}. */
-  protected abstract void doSetNextReader(AtomicReaderContext context) throws IOException;
+
+  /** Performs the actual work of {@link #subCollector(AtomicReaderContext)}. */
+  protected abstract SubCollector createSubCollector(AtomicReaderContext context) throws IOException;
   
   /**
    * Returns a {@link FacetResult} per {@link FacetRequest} set in
@@ -211,10 +189,9 @@ public abstract class FacetsCollector extends SerialCollector {
     // LUCENE-4893: if results are not cached, counts are multiplied as many
     // times as this method is called. 
     if (cachedResults == null) {
-      finish();
       cachedResults = accumulator.accumulate(matchingDocs);
     }
-    
+
     return cachedResults;
   }
   
@@ -223,7 +200,6 @@ public abstract class FacetsCollector extends SerialCollector {
    * visited segment.
    */
   public final List<MatchingDocs> getMatchingDocs() {
-    finish();
     return matchingDocs;
   }
   
@@ -233,18 +209,27 @@ public abstract class FacetsCollector extends SerialCollector {
    * results), and does not attempt to reuse allocated memory spaces.
    */
   public final void reset() {
-    finish();
     matchingDocs.clear();
     cachedResults = null;
   }
 
   @Override
-  public final void setNextReader(AtomicReaderContext context) throws IOException {
+  public final SubCollector subCollector(AtomicReaderContext context) throws IOException {
     // clear cachedResults - needed in case someone called getFacetResults()
     // before doing a search and didn't call reset(). Defensive code to prevent
     // traps.
     cachedResults = null;
-    doSetNextReader(context);
+    return createSubCollector(context);
   }
-  
+
+  @Override
+  public void setParallelized() {
+    // this collector has the same approach for serial & parallel collection
+  }
+
+  @Override
+  public boolean isParallelizable() {
+    return true;
+  }
+
 }
