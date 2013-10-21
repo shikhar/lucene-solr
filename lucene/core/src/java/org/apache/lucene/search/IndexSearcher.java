@@ -20,19 +20,13 @@ package org.apache.lucene.search;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CompletionService;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.AtomicReaderContext;
@@ -48,7 +42,6 @@ import org.apache.lucene.index.Terms;
 import org.apache.lucene.search.similarities.DefaultSimilarity;
 import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.store.NIOFSDirectory;    // javadoc
-import org.apache.lucene.util.ThreadInterruptedException;
 import org.apache.lucene.index.IndexWriter; // javadocs
 
 /** Implements search over a single IndexReader.
@@ -84,8 +77,6 @@ public class IndexSearcher {
   // in the next release
   protected final IndexReaderContext readerContext;
   protected final List<AtomicReaderContext> leafContexts;
-  /** used with executor - each slice holds a set of leafs executed within one thread */
-  protected final LeafSlice[] leafSlices;
 
   // This is used for parallel search
   protected final ExecutorService executor;
@@ -149,7 +140,6 @@ public class IndexSearcher {
     this.executor = executor;
     this.readerContext = context;
     leafContexts = context.leaves();
-    this.leafSlices = executor == null ? null : slices(leafContexts);
   }
 
   /**
@@ -163,20 +153,6 @@ public class IndexSearcher {
     this(context, null);
   }
 
-  /**
-   * Expert: Creates an array of leaf slices each holding a subset of the given leaves.
-   * Each {@link LeafSlice} is executed in a single thread. By default there
-   * will be one {@link LeafSlice} per leaf ({@link AtomicReaderContext}).
-   */
-  protected LeafSlice[] slices(List<AtomicReaderContext> leaves) {
-    LeafSlice[] slices = new LeafSlice[leaves.size()];
-    for (int i = 0; i < slices.length; i++) {
-      slices[i] = new LeafSlice(leaves.get(i));
-    }
-    return slices;
-  }
-
-  
   /** Return the {@link IndexReader} this searches. */
   public IndexReader getIndexReader() {
     return reader;
@@ -501,38 +477,7 @@ public class IndexSearcher {
     if (limit == 0) {
       limit = 1;
     }
-    nDocs = Math.min(nDocs, limit);
-
-    if (executor == null) {
-      // use all leaves here!
-      return search(leafContexts, weight, after, nDocs, sort, fillFields, doDocScores, doMaxScore);
-    } else {
-      final TopFieldCollector topCollector = TopFieldCollector.create(sort, nDocs,
-                                                                      after,
-                                                                      fillFields,
-                                                                      doDocScores,
-                                                                      doMaxScore,
-                                                                      false);
-
-      final Lock lock = new ReentrantLock();
-      final ExecutionHelper<TopFieldDocs> runner = new ExecutionHelper<TopFieldDocs>(executor);
-      for (int i = 0; i < leafSlices.length; i++) { // search each leaf slice
-        runner.submit(
-                      new SearcherCallableWithSort(lock, this, leafSlices[i], weight, after, nDocs, topCollector, sort, doDocScores, doMaxScore));
-      }
-      int totalHits = 0;
-      float maxScore = Float.NEGATIVE_INFINITY;
-      for (final TopFieldDocs topFieldDocs : runner) {
-        if (topFieldDocs.totalHits != 0) {
-          totalHits += topFieldDocs.totalHits;
-          maxScore = Math.max(maxScore, topFieldDocs.getMaxScore());
-        }
-      }
-
-      final TopFieldDocs topDocs = (TopFieldDocs) topCollector.topDocs();
-
-      return new TopFieldDocs(totalHits, topDocs.scoreDocs, topDocs.fields, topDocs.getMaxScore());
-    }
+    return search(leafContexts, weight, after, Math.min(nDocs, limit), sort, fillFields, doDocScores, doMaxScore);
   }
   
   
@@ -714,173 +659,6 @@ public class IndexSearcher {
   /* sugar for #getReader().getTopReaderContext() */
   public IndexReaderContext getTopReaderContext() {
     return readerContext;
-  }
-
-  /**
-   * A thread subclass for searching a single searchable
-   */
-  private static final class SearcherCallableWithSort implements Callable<TopFieldDocs> {
-
-    private final Lock lock;
-    private final IndexSearcher searcher;
-    private final Weight weight;
-    private final int nDocs;
-    private final TopFieldCollector hq;
-    private final Sort sort;
-    private final LeafSlice slice;
-    private final FieldDoc after;
-    private final boolean doDocScores;
-    private final boolean doMaxScore;
-
-    public SearcherCallableWithSort(Lock lock, IndexSearcher searcher, LeafSlice slice, Weight weight,
-                                    FieldDoc after, int nDocs, TopFieldCollector hq, Sort sort,
-                                    boolean doDocScores, boolean doMaxScore) {
-      this.lock = lock;
-      this.searcher = searcher;
-      this.weight = weight;
-      this.nDocs = nDocs;
-      this.hq = hq;
-      this.sort = sort;
-      this.slice = slice;
-      this.after = after;
-      this.doDocScores = doDocScores;
-      this.doMaxScore = doMaxScore;
-    }
-
-    private final class FakeScorer extends Scorer {
-      float score;
-      int doc;
-
-      public FakeScorer() {
-        super(null);
-      }
-
-      @Override
-      public int advance(int target) {
-        throw new UnsupportedOperationException("FakeScorer doesn't support advance(int)");
-      }
-
-      @Override
-      public int docID() {
-        return doc;
-      }
-
-      @Override
-      public int freq() {
-        throw new UnsupportedOperationException("FakeScorer doesn't support freq()");
-      }
-
-      @Override
-      public int nextDoc() {
-        throw new UnsupportedOperationException("FakeScorer doesn't support nextDoc()");
-      }
-
-      @Override
-      public float score() {
-        return score;
-      }
-
-      @Override
-      public long cost() {
-        return 1;
-      }
-    }
-
-    private final FakeScorer fakeScorer = new FakeScorer();
-
-    @Override
-    public TopFieldDocs call() throws IOException {
-      assert slice.leaves.length == 1;
-      final TopFieldDocs docs = searcher.search(Arrays.asList(slice.leaves),
-          weight, after, nDocs, sort, true, doDocScores || sort.needsScores(), doMaxScore);
-      lock.lock();
-      try {
-        final AtomicReaderContext ctx = slice.leaves[0];
-        final int base = ctx.docBase;
-        final SubCollector subCollector = hq.subCollector(ctx);
-        subCollector.setScorer(fakeScorer);
-        for(ScoreDoc scoreDoc : docs.scoreDocs) {
-          fakeScorer.doc = scoreDoc.doc - base;
-          fakeScorer.score = scoreDoc.score;
-          hq.collect(scoreDoc.doc-base);
-        }
-        subCollector.done();
-
-        // Carry over maxScore from sub:
-        if (doMaxScore && docs.getMaxScore() > hq.maxScore) {
-          hq.maxScore = docs.getMaxScore();
-        }
-      } finally {
-        lock.unlock();
-      }
-      return docs;
-    }
-  }
-
-  /**
-   * A helper class that wraps a {@link CompletionService} and provides an
-   * iterable interface to the completed {@link Callable} instances.
-   * 
-   * @param <T>
-   *          the type of the {@link Callable} return value
-   */
-  private static final class ExecutionHelper<T> implements Iterator<T>, Iterable<T> {
-    private final CompletionService<T> service;
-    private int numTasks;
-
-    ExecutionHelper(final Executor executor) {
-      this.service = new ExecutorCompletionService<T>(executor);
-    }
-
-    @Override
-    public boolean hasNext() {
-      return numTasks > 0;
-    }
-
-    public void submit(Callable<T> task) {
-      this.service.submit(task);
-      ++numTasks;
-    }
-
-    @Override
-    public T next() {
-      if(!this.hasNext()) 
-        throw new NoSuchElementException("next() is called but hasNext() returned false");
-      try {
-        return service.take().get();
-      } catch (InterruptedException e) {
-        throw new ThreadInterruptedException(e);
-      } catch (ExecutionException e) {
-        throw new RuntimeException(e);
-      } finally {
-        --numTasks;
-      }
-    }
-
-    @Override
-    public void remove() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Iterator<T> iterator() {
-      // use the shortcut here - this is only used in a private context
-      return this;
-    }
-  }
-
-  /**
-   * A class holding a subset of the {@link IndexSearcher}s leaf contexts to be
-   * executed within a single thread.
-   * 
-   * @lucene.experimental
-   */
-  public static class LeafSlice {
-    final AtomicReaderContext[] leaves;
-    
-    public LeafSlice(AtomicReaderContext... leaves) {
-      this.leaves = leaves;
-    }
   }
 
   @Override

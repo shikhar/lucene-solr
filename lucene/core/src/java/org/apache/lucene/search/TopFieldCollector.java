@@ -21,7 +21,6 @@ import java.io.IOException;
 
 import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.search.FieldValueHitQueue.Entry;
-import org.apache.lucene.util.PriorityQueue;
 
 /**
  * A {@link Collector} that sorts by {@link SortField} using
@@ -32,8 +31,8 @@ import org.apache.lucene.util.PriorityQueue;
  * 
  * @lucene.experimental
  */
-public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
-  
+public abstract class TopFieldCollector extends TopDocsCollector<Entry> {
+
   // TODO: one optimization we could do is to pre-fill
   // the queue with sentinel value that guaranteed to
   // always compare lower than a real hit; this would
@@ -43,25 +42,21 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
    * Implements a TopFieldCollector over one SortField criteria, without
    * tracking document scores and maxScore.
    */
-  private static class OneComparatorNonScoringCollector extends 
-      TopFieldCollector {
+  private class OneComparatorNonScoringSubCollector extends TopFieldSubCollector {
 
-    FieldComparator<?> comparator;
+    final FieldComparator<?> comparator;
     final int reverseMul;
-    final FieldValueHitQueue<Entry> queue;
-    
-    public OneComparatorNonScoringCollector(FieldValueHitQueue<Entry> queue,
-        int numHits, boolean fillFields) {
-      super(queue, numHits, fillFields);
-      this.queue = queue;
-      comparator = queue.getComparators()[0];
-      reverseMul = queue.getReverseMul()[0];
+
+    OneComparatorNonScoringSubCollector(AtomicReaderContext context) throws IOException {
+      super(context);
+      comparator = queue.firstComparator;
+      reverseMul = queue.reverseMul[0];
     }
-    
+
     final void updateBottom(int doc) {
       // bottom.score is already set to Float.NaN in add().
       bottom.doc = docBase + doc;
-      bottom = pq.updateTop();
+      bottom = queue.updateTop();
     }
 
     @Override
@@ -74,7 +69,7 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
           // therefore not competitive.
           return;
         }
-        
+
         // This hit is competitive - replace bottom element in queue & adjustTop
         comparator.copy(bottom.slot, doc);
         updateBottom(doc);
@@ -90,19 +85,12 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
         }
       }
     }
-    
-    @Override
-    public void setNextReader(AtomicReaderContext context) throws IOException {
-      this.docBase = context.docBase;
-      queue.setComparator(0, comparator.setNextReader(context));
-      comparator = queue.firstComparator;
-    }
-    
+
     @Override
     public void setScorer(Scorer scorer) throws IOException {
       comparator.setScorer(scorer);
     }
-    
+
   }
 
   /*
@@ -110,12 +98,11 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
    * tracking document scores and maxScore, and assumes out of orderness in doc
    * Ids collection.
    */
-  private static class OutOfOrderOneComparatorNonScoringCollector extends
-      OneComparatorNonScoringCollector {
+  private class OutOfOrderOneComparatorNonScoringSubCollector extends OneComparatorNonScoringSubCollector {
 
-    public OutOfOrderOneComparatorNonScoringCollector(FieldValueHitQueue<Entry> queue,
-        int numHits, boolean fillFields) {
-      super(queue, numHits, fillFields);
+    public OutOfOrderOneComparatorNonScoringSubCollector(AtomicReaderContext context)
+        throws IOException {
+      super(context);
     }
     
     @Override
@@ -155,20 +142,18 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
    * Implements a TopFieldCollector over one SortField criteria, while tracking
    * document scores but no maxScore.
    */
-  private static class OneComparatorScoringNoMaxScoreCollector extends
-      OneComparatorNonScoringCollector {
+  private class OneComparatorScoringNoMaxScoreSubCollector extends OneComparatorNonScoringSubCollector {
 
     Scorer scorer;
 
-    public OneComparatorScoringNoMaxScoreCollector(FieldValueHitQueue<Entry> queue,
-        int numHits, boolean fillFields) {
-      super(queue, numHits, fillFields);
+    public OneComparatorScoringNoMaxScoreSubCollector(AtomicReaderContext context) throws IOException {
+      super(context);
     }
     
     final void updateBottom(int doc, float score) {
       bottom.doc = docBase + doc;
       bottom.score = score;
-      bottom = pq.updateTop();
+      bottom = queue.updateTop();
     }
 
     @Override
@@ -217,12 +202,10 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
    * document scores but no maxScore, and assumes out of orderness in doc Ids
    * collection.
    */
-  private static class OutOfOrderOneComparatorScoringNoMaxScoreCollector extends
-      OneComparatorScoringNoMaxScoreCollector {
+  private class OutOfOrderOneComparatorScoringNoMaxScoreSubCollector extends OneComparatorScoringNoMaxScoreSubCollector {
 
-    public OutOfOrderOneComparatorScoringNoMaxScoreCollector(
-        FieldValueHitQueue<Entry> queue, int numHits, boolean fillFields) {
-      super(queue, numHits, fillFields);
+    public OutOfOrderOneComparatorScoringNoMaxScoreSubCollector(AtomicReaderContext context) throws IOException {
+      super(context);
     }
     
     @Override
@@ -268,22 +251,19 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
    * Implements a TopFieldCollector over one SortField criteria, with tracking
    * document scores and maxScore.
    */
-  private static class OneComparatorScoringMaxScoreCollector extends
-      OneComparatorNonScoringCollector {
+  private class OneComparatorScoringMaxScoreSubCollector extends OneComparatorNonScoringSubCollector {
 
     Scorer scorer;
     
-    public OneComparatorScoringMaxScoreCollector(FieldValueHitQueue<Entry> queue,
-        int numHits, boolean fillFields) {
-      super(queue, numHits, fillFields);
-      // Must set maxScore to NEG_INF, or otherwise Math.max always returns NaN.
-      maxScore = Float.NEGATIVE_INFINITY;
+    public OneComparatorScoringMaxScoreSubCollector(AtomicReaderContext context) throws IOException {
+      super(context);
+      initMaxScore();
     }
     
     final void updateBottom(int doc, float score) {
       bottom.doc = docBase + doc;
       bottom.score = score;
-      bottom =  pq.updateTop();
+      bottom = queue.updateTop();
     }
 
     @Override
@@ -330,12 +310,10 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
    * document scores and maxScore, and assumes out of orderness in doc Ids
    * collection.
    */
-  private static class OutOfOrderOneComparatorScoringMaxScoreCollector extends
-      OneComparatorScoringMaxScoreCollector {
+  private class OutOfOrderOneComparatorScoringMaxScoreSubCollector extends OneComparatorScoringMaxScoreSubCollector {
 
-    public OutOfOrderOneComparatorScoringMaxScoreCollector(FieldValueHitQueue<Entry> queue,
-        int numHits, boolean fillFields) {
-      super(queue, numHits, fillFields);
+    public OutOfOrderOneComparatorScoringMaxScoreSubCollector(AtomicReaderContext context) throws IOException {
+      super(context);
     }
     
     @Override
@@ -379,23 +357,22 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
    * Implements a TopFieldCollector over multiple SortField criteria, without
    * tracking document scores and maxScore.
    */
-  private static class MultiComparatorNonScoringCollector extends TopFieldCollector {
+  private class MultiComparatorNonScoringSubCollector extends TopFieldSubCollector {
     
     final FieldComparator<?>[] comparators;
     final int[] reverseMul;
-    final FieldValueHitQueue<Entry> queue;
-    public MultiComparatorNonScoringCollector(FieldValueHitQueue<Entry> queue,
-        int numHits, boolean fillFields) {
-      super(queue, numHits, fillFields);
-      this.queue = queue;
-      comparators = queue.getComparators();
-      reverseMul = queue.getReverseMul();
+
+    public MultiComparatorNonScoringSubCollector(AtomicReaderContext context)
+        throws IOException {
+      super(context);
+      comparators = queue.comparators;
+      reverseMul = queue.reverseMul;
     }
     
     final void updateBottom(int doc) {
       // bottom.score is already set to Float.NaN in add().
       bottom.doc = docBase + doc;
-      bottom = pq.updateTop();
+      bottom = queue.updateTop();
     }
 
     @Override
@@ -442,14 +419,6 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
             comparators[i].setBottom(bottom.slot);
           }
         }
-      }
-    }
-
-    @Override
-    public void setNextReader(AtomicReaderContext context) throws IOException {
-      docBase = context.docBase;
-      for (int i = 0; i < comparators.length; i++) {
-        queue.setComparator(i, comparators[i].setNextReader(context));
       }
     }
 
@@ -467,12 +436,10 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
    * tracking document scores and maxScore, and assumes out of orderness in doc
    * Ids collection.
    */
-  private static class OutOfOrderMultiComparatorNonScoringCollector extends
-      MultiComparatorNonScoringCollector {
+  private class OutOfOrderMultiComparatorNonScoringSubCollector extends MultiComparatorNonScoringSubCollector {
     
-    public OutOfOrderMultiComparatorNonScoringCollector(FieldValueHitQueue<Entry> queue,
-        int numHits, boolean fillFields) {
-      super(queue, numHits, fillFields);
+    public OutOfOrderMultiComparatorNonScoringSubCollector(AtomicReaderContext context) throws IOException {
+      super(context);
     }
     
     @Override
@@ -535,21 +502,19 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
    * Implements a TopFieldCollector over multiple SortField criteria, with
    * tracking document scores and maxScore.
    */
-  private static class MultiComparatorScoringMaxScoreCollector extends MultiComparatorNonScoringCollector {
+  private class MultiComparatorScoringMaxScoreSubCollector extends MultiComparatorNonScoringSubCollector {
     
     Scorer scorer;
     
-    public MultiComparatorScoringMaxScoreCollector(FieldValueHitQueue<Entry> queue,
-        int numHits, boolean fillFields) {
-      super(queue, numHits, fillFields);
-      // Must set maxScore to NEG_INF, or otherwise Math.max always returns NaN.
-      maxScore = Float.NEGATIVE_INFINITY;
+    public MultiComparatorScoringMaxScoreSubCollector(AtomicReaderContext context) throws IOException {
+      super(context);
+      initMaxScore();
     }
     
     final void updateBottom(int doc, float score) {
       bottom.doc = docBase + doc;
       bottom.score = score;
-      bottom =  pq.updateTop();
+      bottom = queue.updateTop();
     }
 
     @Override
@@ -615,12 +580,11 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
    * tracking document scores and maxScore, and assumes out of orderness in doc
    * Ids collection.
    */
-  private final static class OutOfOrderMultiComparatorScoringMaxScoreCollector
-      extends MultiComparatorScoringMaxScoreCollector {
+  private final class OutOfOrderMultiComparatorScoringMaxScoreSubCollector
+      extends MultiComparatorScoringMaxScoreSubCollector {
     
-    public OutOfOrderMultiComparatorScoringMaxScoreCollector(FieldValueHitQueue<Entry> queue,
-        int numHits, boolean fillFields) {
-      super(queue, numHits, fillFields);
+    public OutOfOrderMultiComparatorScoringMaxScoreSubCollector(AtomicReaderContext context) throws IOException {
+      super(context);
     }
     
     @Override
@@ -687,19 +651,18 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
    * Implements a TopFieldCollector over multiple SortField criteria, with
    * tracking document scores and maxScore.
    */
-  private static class MultiComparatorScoringNoMaxScoreCollector extends MultiComparatorNonScoringCollector {
+  private class MultiComparatorScoringNoMaxScoreSubCollector extends MultiComparatorNonScoringSubCollector {
     
     Scorer scorer;
     
-    public MultiComparatorScoringNoMaxScoreCollector(FieldValueHitQueue<Entry> queue,
-        int numHits, boolean fillFields) {
-      super(queue, numHits, fillFields);
+    public MultiComparatorScoringNoMaxScoreSubCollector(AtomicReaderContext context) throws IOException {
+      super(context);
     }
     
     final void updateBottom(int doc, float score) {
       bottom.doc = docBase + doc;
       bottom.score = score;
-      bottom = pq.updateTop();
+      bottom = queue.updateTop();
     }
 
     @Override
@@ -766,12 +729,11 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
    * tracking document scores and maxScore, and assumes out of orderness in doc
    * Ids collection.
    */
-  private final static class OutOfOrderMultiComparatorScoringNoMaxScoreCollector
-      extends MultiComparatorScoringNoMaxScoreCollector {
+  private final class OutOfOrderMultiComparatorScoringNoMaxScoreSubCollector
+      extends MultiComparatorScoringNoMaxScoreSubCollector {
     
-    public OutOfOrderMultiComparatorScoringNoMaxScoreCollector(
-        FieldValueHitQueue<Entry> queue, int numHits, boolean fillFields) {
-      super(queue, numHits, fillFields);
+    public OutOfOrderMultiComparatorScoringNoMaxScoreSubCollector(AtomicReaderContext context) throws IOException {
+      super(context);
     }
     
     @Override
@@ -844,37 +806,40 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
   /*
    * Implements a TopFieldCollector when after != null.
    */
-  private final static class PagingFieldCollector extends TopFieldCollector {
+  private final class PagingFieldSubCollector extends TopFieldSubCollector {
 
-    Scorer scorer;
-    int collectedHits;
-    final FieldComparator<?>[] comparators;
-    final int[] reverseMul;
-    final FieldValueHitQueue<Entry> queue;
+    final FieldDoc after;
     final boolean trackDocScores;
     final boolean trackMaxScore;
-    final FieldDoc after;
-    int afterDoc;
-    
-    public PagingFieldCollector(
-                                FieldValueHitQueue<Entry> queue, FieldDoc after, int numHits, boolean fillFields,
-                                boolean trackDocScores, boolean trackMaxScore) {
-      super(queue, numHits, fillFields);
-      this.queue = queue;
+    final int afterDoc;
+
+    final FieldComparator<?>[] comparators;
+    final int[] reverseMul;
+
+    Scorer scorer;
+
+    public PagingFieldSubCollector(FieldDoc after, boolean trackDocScores, boolean trackMaxScore,
+                                   AtomicReaderContext context) throws IOException {
+      super(context);
+
+      this.after = after;
       this.trackDocScores = trackDocScores;
       this.trackMaxScore = trackMaxScore;
-      this.after = after;
-      comparators = queue.getComparators();
-      reverseMul = queue.getReverseMul();
 
-      // Must set maxScore to NEG_INF, or otherwise Math.max always returns NaN.
-      maxScore = Float.NEGATIVE_INFINITY;
+      afterDoc = after.doc - docBase;
+
+      comparators = queue.comparators;
+      reverseMul = queue.reverseMul;
+
+      if (trackMaxScore) {
+        initMaxScore();
+      }
     }
-    
+
     void updateBottom(int doc, float score) {
       bottom.doc = docBase + doc;
       bottom.score = score;
-      bottom = pq.updateTop();
+      bottom = queue.updateTop();
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -967,7 +932,7 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
         if (trackDocScores && !trackMaxScore) {
           score = scorer.score();
         }
-        bottom = pq.add(new Entry(slot, docBase + doc, score));
+        bottom = queue.add(new Entry(slot, docBase + doc, score));
         queueFull = collectedHits == numHits;
         if (queueFull) {
           for (int i = 0; i < comparators.length; i++) {
@@ -984,44 +949,166 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
         comparators[i].setScorer(scorer);
       }
     }
-    
+
     @Override
     public boolean acceptsDocsOutOfOrder() {
       return true;
     }
 
+  }
+
+  private static interface Creator {
+    TopFieldCollector create(FieldValueHitQueue<Entry> q, boolean docsScoredInOrder) throws IOException;
+  }
+
+  private static final class FakeScorer extends Scorer {
+    float score;
+    int doc;
+
+    public FakeScorer() {
+      super(null);
+    }
+
     @Override
-    public void setNextReader(AtomicReaderContext context) throws IOException {
-      docBase = context.docBase;
-      afterDoc = after.doc - docBase;
-      for (int i = 0; i < comparators.length; i++) {
-        queue.setComparator(i, comparators[i].setNextReader(context));
+    public int advance(int target) {
+      throw new UnsupportedOperationException("FakeScorer doesn't support advance(int)");
+    }
+
+    @Override
+    public int docID() {
+      return doc;
+    }
+
+    @Override
+    public int freq() {
+      throw new UnsupportedOperationException("FakeScorer doesn't support freq()");
+    }
+
+    @Override
+    public int nextDoc() {
+      throw new UnsupportedOperationException("FakeScorer doesn't support nextDoc()");
+    }
+
+    @Override
+    public float score() {
+      return score;
+    }
+
+    @Override
+    public long cost() {
+      return 1;
+    }
+  }
+
+  private abstract class TopFieldSubCollector implements SubCollector {
+
+    final AtomicReaderContext context;
+    final int docBase;
+
+    final FieldValueHitQueue<Entry> queue;
+    int totalHits;
+    int collectedHits;
+    float maxScore = Float.NaN;
+
+    FieldValueHitQueue.Entry bottom;
+    boolean queueFull;
+
+    TopFieldSubCollector(AtomicReaderContext context) throws IOException {
+      this.context = context;
+      this.docBase = context.docBase;
+
+      if (parallelized) {
+        queue = FieldValueHitQueue.create(TopFieldCollector.this.queue.getFields(), numHits);
+      } else { // pick up where we left of
+        queue = TopFieldCollector.this.queue;
+        totalHits = TopFieldCollector.this.totalHits;
+        collectedHits = TopFieldCollector.this.collectedHits;
+        bottom = queue.top();
+        queueFull = totalHits >= numHits;
       }
+
+      for (int i = 0; i < queue.comparators.length; i++) {
+        queue.setComparator(i, queue.comparators[i].setNextReader(context));
+      }
+    }
+
+    // must be invoked by subclasses that care about maxScore to correctly initialize it to a non-NaN value
+    final void initMaxScore() {
+      if (parallelized) {
+        maxScore = Float.NEGATIVE_INFINITY;
+      } else {
+        maxScore = Float.isNaN(TopFieldCollector.this.maxScore)
+            ? Float.NEGATIVE_INFINITY
+            : Math.max(Float.NEGATIVE_INFINITY, TopFieldCollector.this.maxScore);
+      }
+    }
+
+    final void add(int slot, int doc, float score) {
+      bottom = queue.add(new Entry(slot, docBase + doc, score));
+      queueFull = totalHits == numHits;
+    }
+
+    @Override
+    public void done() throws IOException {
+      if (parallelized) { // merge our state
+        if (mergeAccumulator == null) {
+          mergeAccumulator = recreator.create(TopFieldCollector.this.queue, false);
+        }
+
+        final FakeScorer fakeScorer = new FakeScorer();
+        final SubCollector sub = mergeAccumulator.subCollector(context);
+        sub.setScorer(fakeScorer);
+        for (final Entry e: queue) {
+          fakeScorer.doc = e.doc - docBase;
+          fakeScorer.score = e.score;
+          sub.collect(fakeScorer.doc);
+        }
+        sub.done();
+
+        TopFieldCollector.this.totalHits += totalHits;
+        TopFieldCollector.this.collectedHits += collectedHits;
+        TopFieldCollector.this.maxScore = Float.isNaN(TopFieldCollector.this.maxScore)
+            ? maxScore : Math.max(maxScore, TopFieldCollector.this.maxScore);
+      } else { // stash our state
+        TopFieldCollector.this.totalHits = totalHits;
+        TopFieldCollector.this.collectedHits = collectedHits;
+        TopFieldCollector.this.maxScore = maxScore;
+      }
+    }
+
+    @Override
+    public boolean acceptsDocsOutOfOrder() {
+      return false;
     }
   }
 
   private static final ScoreDoc[] EMPTY_SCOREDOCS = new ScoreDoc[0];
-  
-  private final boolean fillFields;
 
-  /*
-   * Stores the maximum score value encountered, needed for normalizing. If
-   * document scores are not tracked, this value is initialized to NaN.
-   */
+  final Creator recreator;
+
+  final FieldValueHitQueue<Entry> queue;
+  final int numHits;
+  final boolean fillFields;
+
+  boolean parallelized;
+
+  int collectedHits;
+
+  TopFieldCollector mergeAccumulator; // used during SubCollector.done() merge legwork in parallel collection
+
+  // Stores the maximum score value encountered, needed for normalizing.
+  // If document scores are not tracked, this value will stay NaN.
   float maxScore = Float.NaN;
 
-  final int numHits;
-  FieldValueHitQueue.Entry bottom = null;
-  boolean queueFull;
-  int docBase;
-  
   // Declaring the constructor private prevents extending this class by anyone
   // else. Note that the class cannot be final since it's extended by the
   // internal versions. If someone will define a constructor with any other
   // visibility, then anyone will be able to extend the class, which is not what
   // we want.
-  private TopFieldCollector(PriorityQueue<Entry> pq, int numHits, boolean fillFields) {
-    super(pq);
+  private TopFieldCollector(Creator recreator, FieldValueHitQueue<Entry> queue, int numHits, boolean fillFields) {
+    super(queue);
+    this.recreator = recreator;
+    this.queue = queue;
     this.numHits = numHits;
     this.fillFields = fillFields;
   }
@@ -1107,76 +1194,112 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
    *         the sort criteria.
    * @throws IOException if there is a low-level I/O error
    */
-  public static TopFieldCollector create(Sort sort, int numHits, FieldDoc after,
-      boolean fillFields, boolean trackDocScores, boolean trackMaxScore,
-      boolean docsScoredInOrder)
+  public static TopFieldCollector create(final Sort sort, final int numHits, final FieldDoc after,
+      final boolean fillFields, final boolean trackDocScores, final boolean trackMaxScore,
+      final boolean docsScoredInOrder)
       throws IOException {
 
     if (sort.fields.length == 0) {
       throw new IllegalArgumentException("Sort must contain at least one field");
     }
-    
+
     if (numHits <= 0) {
       throw new IllegalArgumentException("numHits must be > 0; please use TotalHitCountCollector if you just need the total hit count");
     }
 
-    FieldValueHitQueue<Entry> queue = FieldValueHitQueue.create(sort.fields, numHits);
+    final boolean needScores = trackDocScores || sort.needsScores();
 
+    final Creator creator;
     if (after == null) {
-      if (queue.getComparators().length == 1) {
-        if (docsScoredInOrder) {
-          if (trackMaxScore) {
-            return new OneComparatorScoringMaxScoreCollector(queue, numHits, fillFields);
-          } else if (trackDocScores) {
-            return new OneComparatorScoringNoMaxScoreCollector(queue, numHits, fillFields);
-          } else {
-            return new OneComparatorNonScoringCollector(queue, numHits, fillFields);
-          }
-        } else {
-          if (trackMaxScore) {
-            return new OutOfOrderOneComparatorScoringMaxScoreCollector(queue, numHits, fillFields);
-          } else if (trackDocScores) {
-            return new OutOfOrderOneComparatorScoringNoMaxScoreCollector(queue, numHits, fillFields);
-          } else {
-            return new OutOfOrderOneComparatorNonScoringCollector(queue, numHits, fillFields);
-          }
-        }
-      }
 
-      // multiple comparators.
-      if (docsScoredInOrder) {
-        if (trackMaxScore) {
-          return new MultiComparatorScoringMaxScoreCollector(queue, numHits, fillFields);
-        } else if (trackDocScores) {
-          return new MultiComparatorScoringNoMaxScoreCollector(queue, numHits, fillFields);
-        } else {
-          return new MultiComparatorNonScoringCollector(queue, numHits, fillFields);
+      creator = new Creator() {
+        @Override
+        public TopFieldCollector create(
+            final FieldValueHitQueue<Entry> queue,
+            final boolean docsScoredInOrder
+        ) throws IOException {
+          return new TopFieldCollector(this, queue, numHits, fillFields) {
+            @Override
+            public SubCollector subCollector(AtomicReaderContext context) throws IOException {
+
+              if (queue.getComparators().length == 1) {
+
+                if (docsScoredInOrder) {
+                  if (trackMaxScore) {
+                    return new OneComparatorScoringMaxScoreSubCollector(context);
+                  } else if (needScores) {
+                    return new OneComparatorScoringNoMaxScoreSubCollector(context);
+                  } else {
+                    return new OneComparatorNonScoringSubCollector(context);
+                  }
+                } else {
+                  if (trackMaxScore) {
+                    return new OutOfOrderOneComparatorScoringMaxScoreSubCollector(context);
+                  } else if (needScores) {
+                    return new OutOfOrderOneComparatorScoringNoMaxScoreSubCollector(context);
+                  } else {
+                    return new OutOfOrderOneComparatorNonScoringSubCollector(context);
+                  }
+                }
+
+              } else {
+
+                // multiple comparators.
+                if (docsScoredInOrder) {
+                  if (trackMaxScore) {
+                    return new MultiComparatorScoringMaxScoreSubCollector(context);
+                  } else if (needScores) {
+                    return new MultiComparatorScoringNoMaxScoreSubCollector(context);
+                  } else {
+                    return new MultiComparatorNonScoringSubCollector(context);
+                  }
+                } else {
+                  if (trackMaxScore) {
+                    return new OutOfOrderMultiComparatorScoringMaxScoreSubCollector(context);
+                  } else if (needScores) {
+                    return new OutOfOrderMultiComparatorScoringNoMaxScoreSubCollector(context);
+                  } else {
+                    return new OutOfOrderMultiComparatorNonScoringSubCollector(context);
+                  }
+                }
+
+              }
+            }
+          };
         }
-      } else {
-        if (trackMaxScore) {
-          return new OutOfOrderMultiComparatorScoringMaxScoreCollector(queue, numHits, fillFields);
-        } else if (trackDocScores) {
-          return new OutOfOrderMultiComparatorScoringNoMaxScoreCollector(queue, numHits, fillFields);
-        } else {
-          return new OutOfOrderMultiComparatorNonScoringCollector(queue, numHits, fillFields);
-        }
-      }
+      };
+
     } else {
+
       if (after.fields == null) {
         throw new IllegalArgumentException("after.fields wasn't set; you must pass fillFields=true for the previous search");
       }
 
       if (after.fields.length != sort.getSort().length) {
-        throw new IllegalArgumentException("after.fields has " + after.fields.length + " values but sort has " + sort.getSort().length);
+        throw new IllegalArgumentException("after.fields has "
+            + after.fields.length + " values but sort has " + sort.getSort().length);
       }
 
-      return new PagingFieldCollector(queue, after, numHits, fillFields, trackDocScores, trackMaxScore);
+      creator = new Creator() {
+        @Override
+        public TopFieldCollector create(
+            final FieldValueHitQueue<Entry> queue,
+            final boolean docsScoredInOrder
+        ) throws IOException {
+
+          return new TopFieldCollector(this, queue, numHits, fillFields) {
+            @Override
+            public TopFieldSubCollector subCollector(AtomicReaderContext context) throws IOException {
+              return new PagingFieldSubCollector(after, needScores, trackMaxScore, context);
+            }
+          };
+
+        }
+
+      };
     }
-  }
-  
-  final void add(int slot, int doc, float score) {
-    bottom = pq.add(new Entry(slot, docBase + doc, score));
-    queueFull = totalHits == numHits;
+
+    return creator.create(FieldValueHitQueue.create(sort.fields, numHits), docsScoredInOrder);
   }
 
   /*
@@ -1188,7 +1311,6 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
   protected void populateResults(ScoreDoc[] results, int howMany) {
     if (fillFields) {
       // avoid casting if unnecessary.
-      FieldValueHitQueue<Entry> queue = (FieldValueHitQueue<Entry>) pq;
       for (int i = howMany - 1; i >= 0; i--) {
         results[i] = queue.fillFields(queue.pop());
       }
@@ -1209,11 +1331,17 @@ public abstract class TopFieldCollector extends TopDocsSerialCollector<Entry> {
     }
 
     // If this is a maxScoring tracking collector and there were no results, 
-    return new TopFieldDocs(totalHits, results, ((FieldValueHitQueue<Entry>) pq).getFields(), maxScore);
+    return new TopFieldDocs(totalHits, results, queue.getFields(), maxScore);
   }
-  
+
   @Override
-  public boolean acceptsDocsOutOfOrder() {
-    return false;
+  public void setParallelized() {
+    parallelized = true;
   }
+
+  @Override
+  public boolean isParallelizable() {
+    return true;
+  }
+
 }
