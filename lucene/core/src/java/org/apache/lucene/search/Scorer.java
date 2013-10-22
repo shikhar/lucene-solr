@@ -55,7 +55,7 @@ public abstract class Scorer extends DocsEnum {
   }
 
   /** Scores and collects all matching documents.
-   * @param collector The collector to which all matching documents are passed.
+   * @param subCollector The collector to which all matching documents are passed.
    */
   public void score(SubCollector subCollector) throws IOException {
     assert docID() == -1; // not started
@@ -71,7 +71,7 @@ public abstract class Scorer extends DocsEnum {
    * Note, <code>firstDocID</code> is added to ensure that {@link #nextDoc()}
    * was called before this method.
    * 
-   * @param collector
+   * @param subCollector
    *          The collector to which all matching documents are passed.
    * @param max
    *          Do not score documents past this.
@@ -93,7 +93,7 @@ public abstract class Scorer extends DocsEnum {
   /** Returns the score of the current document matching the query.
    * Initially invalid, until {@link #nextDoc()} or {@link #advance(int)}
    * is called the first time, or when called from within
-   * {@link Collector#collect}.
+   * {@link SubCollector#collect}.
    */
   public abstract float score() throws IOException;
   

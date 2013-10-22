@@ -522,7 +522,7 @@ public class DrillSideways {
    *  default is false.  Note that if you return true from
    *  this method (in a subclass) be sure your collector
    *  also returns false from {@link
-   *  Collector#acceptsDocsOutOfOrder}: this will trick
+   *  SubCollector#acceptsDocsOutOfOrder}: this will trick
    *  BooleanQuery into also scoring all subDocs at once. */
   protected boolean scoreSubDocsAtOnce() {
     return false;

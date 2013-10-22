@@ -48,15 +48,5 @@ public abstract class TopDocsSerialCollector<T extends ScoreDoc> extends TopDocs
     return false;
   }
 
-  /**
-   * Called before collecting from each {@link AtomicReaderContext}. All doc ids in
-   * {@link #collect(int)} will correspond to {@link IndexReaderContext#reader}.
-   *
-   * Add {@link AtomicReaderContext#docBase} to the current  {@link IndexReaderContext#reader}'s
-   * internal document id to re-base ids in {@link #collect(int)}.
-   *
-   * @param context
-   *          next atomic reader context
-   */
   protected abstract void setNextReader(AtomicReaderContext context) throws IOException;
 }

@@ -1144,7 +1144,7 @@ public abstract class TopFieldCollector extends TopDocsCollector<Entry> {
    *          <code>trackDocScores</code> to true as well.
    * @param docsScoredInOrder
    *          specifies whether documents are scored in doc Id order or not by
-   *          the given {@link Scorer} in {@link #setScorer(Scorer)}.
+   *          the given {@link Scorer} in {@link SubCollector#setScorer(Scorer)}.
    * @return a {@link TopFieldCollector} instance which will sort the results by
    *         the sort criteria.
    * @throws IOException if there is a low-level I/O error
@@ -1189,7 +1189,7 @@ public abstract class TopFieldCollector extends TopDocsCollector<Entry> {
    *          <code>trackDocScores</code> to true as well.
    * @param docsScoredInOrder
    *          specifies whether documents are scored in doc Id order or not by
-   *          the given {@link Scorer} in {@link #setScorer(Scorer)}.
+   *          the given {@link Scorer} in {@link SubCollector#setScorer(Scorer)}.
    * @return a {@link TopFieldCollector} instance which will sort the results by
    *         the sort criteria.
    * @throws IOException if there is a low-level I/O error

@@ -24,6 +24,7 @@ import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.search.CollectionTerminatedException;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.SubCollector;
+import org.apache.lucene.search.TopDocsCollector; // javadoc
 import org.apache.lucene.search.TotalHitCountCollector;
 import org.apache.lucene.search.WrappingCollector;
 

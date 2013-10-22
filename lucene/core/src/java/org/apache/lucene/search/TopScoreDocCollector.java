@@ -231,7 +231,7 @@ public abstract class TopScoreDocCollector extends TopDocsCollector<ScoreDoc> {
   /**
    * Creates a new {@link TopScoreDocCollector} given the number of hits to
    * collect and whether documents are scored in order by the input
-   * {@link Scorer} to {@link #setScorer(Scorer)}.
+   * {@link Scorer} to {@link SubCollector#setScorer(Scorer)}.
    *
    * <p><b>NOTE</b>: The instances returned by this method
    * pre-allocate a full array of length
@@ -245,7 +245,7 @@ public abstract class TopScoreDocCollector extends TopDocsCollector<ScoreDoc> {
   /**
    * Creates a new {@link TopScoreDocCollector} given the number of hits to
    * collect, the bottom of the previous page, and whether documents are scored in order by the input
-   * {@link Scorer} to {@link #setScorer(Scorer)}.
+   * {@link Scorer} to {@link SubCollector#setScorer(Scorer)}.
    *
    * <p><b>NOTE</b>: The instances returned by this method
    * pre-allocate a full array of length

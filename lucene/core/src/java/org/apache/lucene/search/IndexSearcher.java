@@ -261,7 +261,7 @@ public class IndexSearcher {
 
   /** Lower-level search API.
    *
-   * <p>{@link Collector#collect(int)} is called for every matching
+   * <p>{@link SubCollector#collect(int)} is called for every matching
    * document.
    *
    * @param query to match documents
@@ -277,7 +277,7 @@ public class IndexSearcher {
 
   /** Lower-level search API.
    *
-   * <p>{@link Collector#collect(int)} is called for every matching document.
+   * <p>{@link SubCollector#collect(int)} is called for every matching document.
    *
    * @throws BooleanQuery.TooManyClauses If a query would exceed 
    *         {@link BooleanQuery#getMaxClauseCount()} clauses.
@@ -506,7 +506,7 @@ public class IndexSearcher {
    * Lower-level search API.
    * 
    * <p>
-   * {@link Collector#collect(int)} is called for every document. <br>
+   * {@link SubCollector#collect(int)} is called for every document. <br>
    * 
    * <p>
    * NOTE: this method executes the searches on all given leaves exclusively.

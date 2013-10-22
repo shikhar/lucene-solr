@@ -100,7 +100,7 @@ public abstract class Weight {
    *          and/or {@link Scorer#advance(int)}, therefore it is recommended to
    *          request an in-order scorer if use of these methods is required.
    * @param topScorer
-   *          if true, {@link Scorer#score(Collector)} will be called; if false,
+   *          if true, {@link Scorer#score(SubCollector)} will be called; if false,
    *          {@link Scorer#nextDoc()} and/or {@link Scorer#advance(int)} will
    *          be called.
    * @param acceptDocs
@@ -116,7 +116,7 @@ public abstract class Weight {
   /**
    * Returns true iff this implementation scores docs only out of order. This
    * method is used in conjunction with {@link Collector}'s
-   * {@link Collector#acceptsDocsOutOfOrder() acceptsDocsOutOfOrder} and
+   * {@link SubCollector#acceptsDocsOutOfOrder() acceptsDocsOutOfOrder} and
    * {@link #scorer(AtomicReaderContext, boolean, boolean, Bits)} to
    * create a matching {@link Scorer} instance for a given {@link Collector}, or
    * vice versa.

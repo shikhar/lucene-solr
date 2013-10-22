@@ -488,7 +488,7 @@ public class FilteredQuery extends Query {
      *          and/or {@link Scorer#advance(int)}, therefore it is recommended to
      *          request an in-order scorer if use of these methods is required.
      * @param topScorer
-     *          if true, {@link Scorer#score(Collector)} will be called; if false,
+     *          if true, {@link Scorer#score(SubCollector)} will be called; if false,
      *          {@link Scorer#nextDoc()} and/or {@link Scorer#advance(int)} will
      *          be called.
      * @param weight the {@link FilteredQuery} {@link Weight} to create the filtered scorer.

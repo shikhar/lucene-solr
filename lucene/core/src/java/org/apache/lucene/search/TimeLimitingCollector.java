@@ -143,8 +143,9 @@ public class TimeLimitingCollector implements Collector {
       }
 
       /**
-       * Calls {@link org.apache.lucene.search.Collector#collect(int)} on the decorated {@link org.apache.lucene.search.Collector}
-       * unless the allowed time has passed, in which case it throws an exception.
+       * Calls {@link org.apache.lucene.search.SubCollector#collect(int)} on the decorated
+       * {@link org.apache.lucene.search.SubCollector} unless the allowed time has passed, in which case it throws an
+       * exception.
        *
        * @throws org.apache.lucene.search.TimeLimitingCollector.TimeExceededException
        *           if the time allowed has exceeded.
