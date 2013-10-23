@@ -27,18 +27,20 @@ import java.io.IOException;
 
 public class DocSetCollector implements Collector {
 
+  private static final SortedIntDocSet NULL_SET = new SortedIntDocSet(new int[0], 0);
+
   private final int smallSetSize;
   private final int maxDoc;
   private final Collector delegate;
 
+  private boolean parallelized;
 
-  // in case there aren't that many hits, we may not want a very sparse
-  // bit array.  Optimistically collect the first few docs in an array
-  // in case there are only a few.
-  final int[] scratch;
-  int pos = 0;
+  // In case there aren't that many hits, we may not want a very sparse bit array.
+  // Optimistically collect the first few docs in an array in case there are only a few.
+  private int[] smallSet;
 
-  OpenBitSet bits;
+  private OpenBitSet bits;
+  private int size;
 
   public DocSetCollector(int smallSetSize, int maxDoc) {
     this(smallSetSize, maxDoc, null);
@@ -47,83 +49,141 @@ public class DocSetCollector implements Collector {
   public DocSetCollector(int smallSetSize, int maxDoc, Collector delegate) {
     this.smallSetSize = smallSetSize;
     this.maxDoc = maxDoc;
-    this.scratch = new int[smallSetSize];
     this.delegate = delegate;
   }
 
   public DocSet getDocSet() {
-    if (pos <= scratch.length) {
-      // assumes docs were collected in sorted order!
-      return new SortedIntDocSet(scratch, pos);
-    } else {
-      // set the bits for ids that were collected in the array
-      for (int i = 0; i < scratch.length; i++) bits.fastSet(scratch[i]);
-      return new BitDocSet(bits, pos);
+    if (smallSet != null) {
+      if (size <= smallSet.length) {
+        return new SortedIntDocSet(smallSet, size);
+      }
+      // set bits for docs that are only in the smallSet
+      for (int i = 0; i < smallSet.length; i++) {
+        bits.fastSet(smallSet[i]);
+      }
     }
+    if (bits == null) {
+      return NULL_SET;
+    }
+    return new BitDocSet(bits, size);
+  }
+
+  private static abstract class DocSetSubCollector implements SubCollector {
+
+    final SubCollector delegateSub;
+
+    DocSetSubCollector(SubCollector delegateSub) {
+      this.delegateSub = delegateSub;
+    }
+
+    @Override
+    public void setScorer(Scorer scorer) throws IOException {
+      if (delegateSub != null) {
+        delegateSub.setScorer(scorer);
+      }
+    }
+
+    @Override
+    public void collect(int doc) throws IOException {
+      if (delegateSub != null) {
+        delegateSub.collect(doc);
+      }
+    }
+
+    @Override
+    public void done() throws IOException {
+      if (delegateSub != null) {
+        delegateSub.done();
+      }
+    }
+
   }
 
   @Override
   public SubCollector subCollector(AtomicReaderContext context) throws IOException {
     final SubCollector delegateSub = delegate != null ? delegate.subCollector(context) : null;
-    final int base = context.docBase;
-    return new SubCollector() {
-      @Override
-      public void setScorer(Scorer scorer) throws IOException {
-        if (delegateSub != null) {
-          delegateSub.setScorer(scorer);
-        }
-      }
+    return parallelized ? parallelSubCollector(context, delegateSub) : serialSubCollector(context, delegateSub);
+  }
+
+  private SubCollector parallelSubCollector(final AtomicReaderContext context, final SubCollector delegateSub) {
+    if (bits == null) {
+      bits = new OpenBitSet(maxDoc);
+    }
+
+    return new DocSetSubCollector(delegateSub) {
+
+      long first64; // private BitSet of 64 docs that could clash with docs of another subcollector
+      int size;
 
       @Override
       public void collect(int doc) throws IOException {
-        if (delegateSub != null) {
-          delegateSub.collect(doc);
-        }
-
-        doc += base;
-        // optimistically collect the first docs in an array
-        // in case the total number will be small enough to represent
-        // as a small set like SortedIntDocSet instead...
-        // Storing in this array will be quicker to convert
-        // than scanning through a potentially huge bit vector.
-        // FUTURE: when search methods all start returning docs in order, maybe
-        // we could have a ListDocSet() and use the collected array directly.
-        if (pos < scratch.length) {
-          scratch[pos] = doc;
+        super.collect(doc);
+        if (context.docBase > 0 && doc < 64) {
+          first64 |= 1L << doc;
         } else {
-          // this conditional could be removed if BitSet was preallocated, but that
-          // would take up more memory, and add more GC time...
-          if (bits == null) {
-            bits = new OpenBitSet(maxDoc);
-          }
-          bits.fastSet(doc);
+          bits.fastSet(doc + context.docBase);
         }
-
-        pos++;
+        size++;
       }
 
       @Override
       public void done() throws IOException {
-        if (delegateSub != null) {
-          delegateSub.done();
+        super.done();
+        for (int doc = 0; first64 != 0; first64 >>>= 1, doc++) {
+          if ((first64 & 1) == 1) {
+            bits.fastSet(context.docBase + doc);
+          }
         }
+        DocSetCollector.this.size += size;
       }
 
       @Override
       public boolean acceptsDocsOutOfOrder() {
-        return false;
+        return delegateSub == null || delegateSub.acceptsDocsOutOfOrder();
       }
+    };
+  }
+
+  private SubCollector serialSubCollector(final AtomicReaderContext context, final SubCollector delegateSub) {
+    if (smallSet == null) {
+      smallSet = new int[smallSetSize];
+    }
+
+    return new DocSetSubCollector(delegateSub) {
+
+      @Override
+      public void collect(int doc) throws IOException {
+        super.collect(doc);
+        if (size < smallSet.length) {
+          smallSet[size] = doc + context.docBase;
+        } else {
+          if (bits == null) {
+            bits = new OpenBitSet(maxDoc);
+          }
+          bits.fastSet(doc + context.docBase);
+        }
+        size++;
+      }
+
+      @Override
+      public boolean acceptsDocsOutOfOrder() {
+        return false; // smallSet needs to be collected in sorted order
+      }
+
     };
   }
 
   @Override
   public void setParallelized() {
-    throw new UnsupportedOperationException();
+    if (delegate != null) {
+      delegate.setParallelized();
+    }
+    parallelized = true;
   }
 
   @Override
   public boolean isParallelizable() {
-    return false;
+    return delegate == null || delegate.isParallelizable();
   }
 
 }
