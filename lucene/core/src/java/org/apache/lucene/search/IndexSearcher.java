@@ -27,6 +27,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.AtomicReaderContext;
@@ -558,6 +559,11 @@ public class IndexSearcher {
     }
 
     if (parallelize) {
+      for (Future<SubCollector> f: futures) {
+        if (f instanceof FutureTask<?>) {
+          ((FutureTask<?>) f).run(); // help out if it hasn't begun executing, rather than blocking idly
+        }
+      }
       for (Future<SubCollector> f: futures) {
         final SubCollector sub;
         try {
