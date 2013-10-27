@@ -24,7 +24,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
@@ -524,17 +523,32 @@ public class IndexSearcher {
    */
   protected void search(List<AtomicReaderContext> leaves, final Weight weight, final Collector collector)
       throws IOException {
-
-    final int numLeaves = leaves.size();
-    final boolean parallelize = executor != null && collector.isParallelizable() && numLeaves > 1;
-
-    final List<Future<SubCollector>> futures;
-    if (parallelize) {
-      futures = new ArrayList<Future<SubCollector>>(numLeaves);
-      collector.setParallelized();
+    if (executor != null && collector.isParallelizable() && leaves.size() > 1) {
+      searchParallel(leaves, weight, collector);
     } else {
-      futures = null;
+      searchSerial(leaves, weight, collector);
     }
+  }
+
+  protected void searchSerial(List<AtomicReaderContext> leaves, final Weight weight, final Collector collector)
+      throws IOException {
+    for (final AtomicReaderContext ctx : leaves) { // search each subreader
+      final SubCollector sub;
+      try {
+        sub = collector.subCollector(ctx);
+      } catch (CollectionTerminatedException e) {
+        continue; // there is no doc of interest in this reader context
+      }
+      collect(ctx, weight, sub);
+      sub.done();
+    }
+  }
+
+  protected void searchParallel(List<AtomicReaderContext> leaves, final Weight weight, final Collector collector)
+      throws IOException {
+    collector.setParallelized();
+
+    final List<Future<SubCollector>> futures = new ArrayList<Future<SubCollector>>(leaves.size());
 
     for (final AtomicReaderContext ctx : leaves) { // search each subreader
       final SubCollector sub;
@@ -543,43 +557,36 @@ public class IndexSearcher {
       } catch (CollectionTerminatedException e) {
         continue; // there is no doc of interest in this reader context
       }
+      futures.add(executor.submit(new Callable<SubCollector>() {
+        @Override
+        public SubCollector call() throws IOException {
+          collect(ctx, weight, sub);
+          return sub;
+        }
+      }));
+    }
 
-      if (parallelize) {
-        futures.add(executor.submit(new Callable<SubCollector>() {
-          @Override
-          public SubCollector call() throws IOException {
-            collect(ctx, weight, sub);
-            return sub;
-          }
-        }));
-      } else {
-        collect(ctx, weight, sub);
-        sub.done();
+    for (Future<SubCollector> f: futures) {
+      if (f instanceof FutureTask<?>) {
+        ((FutureTask<?>) f).run(); // help out if it hasn't begun executing, rather than blocking idly
       }
     }
 
-    if (parallelize) {
-      for (Future<SubCollector> f: futures) {
-        if (f instanceof FutureTask<?>) {
-          ((FutureTask<?>) f).run(); // help out if it hasn't begun executing, rather than blocking idly
+    for (Future<SubCollector> f: futures) {
+      final SubCollector sub;
+      try {
+        sub = f.get();
+      } catch (InterruptedException e) {
+        throw new RuntimeException(e);
+      } catch (ExecutionException e) {
+        final Throwable cause = e.getCause();
+        if (cause instanceof IOException) {
+          throw (IOException) cause;
+        } else {
+          throw new RuntimeException(cause);
         }
       }
-      for (Future<SubCollector> f: futures) {
-        final SubCollector sub;
-        try {
-          sub = f.get();
-        } catch (InterruptedException e) {
-          throw new RuntimeException(e);
-        } catch (ExecutionException e) {
-          final Throwable cause = e.getCause();
-          if (cause instanceof IOException) {
-            throw (IOException) cause;
-          } else {
-            throw new RuntimeException(cause);
-          }
-        }
-        sub.done(); // SubCollector.done() is guaranteed to execute in the primary thread
-      }
+      sub.done(); // SubCollector.done() is guaranteed to execute in the primary thread
     }
   }
 
