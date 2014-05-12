@@ -350,15 +350,18 @@ public class BlockGroupingCollector extends SimpleCollector {
       }
 
       collector.setScorer(fakeScorer);
-      collector.getLeafCollector(og.readerContext);
+      final LeafCollector leafCollector = collector.getLeafCollector(og.readerContext);
       for(int docIDX=0;docIDX<og.count;docIDX++) {
         final int doc = og.docs[docIDX];
         fakeScorer.doc = doc;
         if (needsScores) {
           fakeScorer.score = og.scores[docIDX];
         }
-        collector.collect(doc);
+        leafCollector.collect(doc);
       }
+      leafCollector.leafDone();
+      collector.done();
+
       totalGroupedHitCount += og.count;
 
       final Object[] groupSortValues;

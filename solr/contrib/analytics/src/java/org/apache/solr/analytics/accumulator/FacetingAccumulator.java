@@ -168,7 +168,23 @@ public class FacetingAccumulator extends BasicAccumulator implements FacetValueA
       fa.getLeafCollector(context);
     }
   }
-  
+
+  @Override
+  public void leafDone() throws IOException {
+    super.leafDone();
+    for (FieldFacetAccumulator fa : facetAccumulators) {
+      fa.leafDone();
+    }
+  }
+
+  @Override
+  public void done() throws IOException {
+    super.done();
+    for (FieldFacetAccumulator fa : facetAccumulators) {
+      fa.leafDone();
+    }
+  }
+
   /**
    * Updates the reader for all of the range facet {@link StatsCollector}s.
    * @param context The context to read documents from.
@@ -185,7 +201,7 @@ public class FacetingAccumulator extends BasicAccumulator implements FacetValueA
     }
   }
 
-  
+
   /**
    * Updates the reader for all of the query facet {@link StatsCollector}s.
    * @param context The context to read documents from.

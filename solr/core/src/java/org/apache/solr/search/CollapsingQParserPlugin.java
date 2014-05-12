@@ -513,6 +513,7 @@ public class CollapsingQParserPlugin extends QParserPlugin {
           currentContext++;
           currentDocBase = contexts[currentContext].docBase;
           nextDocBase = currentContext+1 < contexts.length ? contexts[currentContext+1].docBase : maxDoc;
+          leafDelegate.leafDone();
           leafDelegate = delegate.getLeafCollector(contexts[currentContext]);
           leafDelegate.setScorer(dummy);
         }
@@ -521,6 +522,10 @@ public class CollapsingQParserPlugin extends QParserPlugin {
         dummy.docId = contextDoc;
         leafDelegate.collect(contextDoc);
       }
+
+      leafDelegate.leafDone();
+
+      delegate.done();
 
       if(delegate instanceof DelegatingCollector) {
         ((DelegatingCollector) delegate).finish();
@@ -630,6 +635,7 @@ public class CollapsingQParserPlugin extends QParserPlugin {
           currentContext++;
           currentDocBase = contexts[currentContext].docBase;
           nextDocBase = currentContext+1 < contexts.length ? contexts[currentContext+1].docBase : maxDoc;
+          leafDelegate.leafDone();
           leafDelegate = delegate.getLeafCollector(contexts[currentContext]);
           leafDelegate.setScorer(dummy);
         }
@@ -638,6 +644,10 @@ public class CollapsingQParserPlugin extends QParserPlugin {
         dummy.docId = contextDoc;
         leafDelegate.collect(contextDoc);
       }
+
+      leafDelegate.leafDone();
+
+      delegate.done();
 
       if(delegate instanceof DelegatingCollector) {
         ((DelegatingCollector) delegate).finish();

@@ -22,6 +22,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -349,7 +350,23 @@ public class ExpandComponent extends SearchComponent implements PluginInfoInitia
         public boolean acceptsDocsOutOfOrder() {
           return false;
         }
+
+        @Override
+        public void leafDone() throws IOException {
+          for (final Iterator<IntObjectCursor<LeafCollector>> iter = leafCollectors.iterator();
+               iter.hasNext(); ) {
+            iter.next().value.leafDone();
+          }
+        }
       };
+    }
+
+    @Override
+    public void done() throws IOException {
+      for (final Iterator<ObjectCursor<Collector>> iter = groups.values().iterator();
+           iter.hasNext(); ) {
+        iter.next().value.done();
+      }
     }
 
     public IntObjectMap<Collector> getGroups() {

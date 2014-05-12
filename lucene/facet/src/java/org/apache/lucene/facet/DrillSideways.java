@@ -175,6 +175,11 @@ public class DrillSideways {
     DrillSidewaysQuery dsq = new DrillSidewaysQuery(baseQuery, drillDownCollector, drillSidewaysCollectors, drillDownQueries, scoreSubDocsAtOnce());
     searcher.search(dsq, hitCollector);
 
+    drillDownCollector.done();
+    for (Collector c: drillSidewaysCollectors) {
+      c.done();
+    }
+
     return new DrillSidewaysResult(buildFacetsResult(drillDownCollector, drillSidewaysCollectors, drillDownDims.keySet().toArray(new String[drillDownDims.size()])), null);
   }
 

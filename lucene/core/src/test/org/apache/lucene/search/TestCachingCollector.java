@@ -81,6 +81,9 @@ public class TestCachingCollector extends LuceneTestCase {
         acc.collect(i);
       }
 
+      acc.leafDone();
+      cc.done();
+
       // now replay them
       cc.replay(new SimpleCollector() {
         int prevDocID = -1;
@@ -108,6 +111,9 @@ public class TestCachingCollector extends LuceneTestCase {
     for (int i = 0; i < 130; i++) {
       acc.collect(i);
     }
+
+    acc.leafDone();
+    cc.done();
     
     assertFalse("CachingCollector should not be cached due to low memory limit", cc.isCached());
     
@@ -128,6 +134,7 @@ public class TestCachingCollector extends LuceneTestCase {
     LeafCollector acc = cc.getLeafCollector(null);
     acc.setScorer(new MockScorer());
     for (int i = 0; i < 10; i++) acc.collect(i);
+    cc.done();
     cc.replay(new NoOpCollector(true)); // this call should not fail
     cc.replay(new NoOpCollector(false)); // this call should not fail
 
@@ -136,6 +143,8 @@ public class TestCachingCollector extends LuceneTestCase {
     acc = cc.getLeafCollector(null);
     acc.setScorer(new MockScorer());
     for (int i = 0; i < 10; i++) acc.collect(i);
+    acc.leafDone();
+    cc.done();
     cc.replay(new NoOpCollector(true)); // this call should not fail
     try {
       cc.replay(new NoOpCollector(false)); // this call should fail
@@ -164,6 +173,9 @@ public class TestCachingCollector extends LuceneTestCase {
       // The 151's document should terminate caching
       acc.collect(numDocs);
       assertFalse(cc.isCached());
+
+      acc.leafDone();
+      cc.done();
     }
   }
 
@@ -174,8 +186,10 @@ public class TestCachingCollector extends LuceneTestCase {
       LeafCollector acc = cc.getLeafCollector(null);
       acc.setScorer(new MockScorer());
       acc.collect(0);
+      acc.leafDone();
       
       assertTrue(cc.isCached());
+      cc.done();
       cc.replay(new NoOpCollector(true));
     }
   }

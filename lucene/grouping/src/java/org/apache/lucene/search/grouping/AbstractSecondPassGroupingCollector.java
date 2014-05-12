@@ -115,6 +115,21 @@ public abstract class AbstractSecondPassGroupingCollector<GROUP_VALUE_TYPE> exte
   }
 
   @Override
+  public void leafDone() throws IOException {
+    for (SearchGroupDocs<GROUP_VALUE_TYPE> group : groupMap.values()) {
+      group.collector.leafDone();
+    }
+  }
+
+
+  @Override
+  public void done() throws IOException {
+    for (SearchGroupDocs<GROUP_VALUE_TYPE> group : groupMap.values()) {
+      group.collector.done();
+    }
+  }
+
+  @Override
   public boolean acceptsDocsOutOfOrder() {
     return false;
   }
@@ -142,7 +157,6 @@ public abstract class AbstractSecondPassGroupingCollector<GROUP_VALUE_TYPE> exte
                                            totalHitCount, totalGroupedHitCount, groupDocsResult,
                                            maxScore);
   }
-
 
   // TODO: merge with SearchGroup or not?
   // ad: don't need to build a new hashmap

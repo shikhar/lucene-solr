@@ -251,7 +251,16 @@ public class TestBooleanQueryVisitSubscorers extends LuceneTestCase {
         public boolean acceptsDocsOutOfOrder() {
           return false;
         }
+
+        @Override
+        public void leafDone() throws IOException {
+
+        }
       };
+    }
+
+    @Override
+    public void done() throws IOException {
     }
 
     private static void summarizeScorer(final StringBuilder builder, final Scorer scorer, final int indent) {

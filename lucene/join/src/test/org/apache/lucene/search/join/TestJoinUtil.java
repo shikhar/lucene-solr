@@ -493,6 +493,16 @@ public class TestJoinUtil extends LuceneTestCase {
           }
 
           @Override
+          public void leafDone() throws IOException {
+            topScoreDocCollector.leafDone();
+          }
+
+          @Override
+          public void done() throws IOException {
+            topScoreDocCollector.done();
+          }
+
+          @Override
           public void setScorer(Scorer scorer) throws IOException {
             topScoreDocCollector.setScorer(scorer);
           }

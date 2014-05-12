@@ -161,7 +161,9 @@ public abstract class CachingCollector extends FilterCollector {
                     + "Therefore cached documents may be out-of-order.");
         }
         collect(collector, i);
+        collector.leafDone();
       }
+      other.done();
     }
 
   }

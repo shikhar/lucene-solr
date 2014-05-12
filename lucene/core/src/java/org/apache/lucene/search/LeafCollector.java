@@ -116,4 +116,9 @@ public interface LeafCollector {
    */
   boolean acceptsDocsOutOfOrder();
 
+  /**
+   * Advise that collection on this leaf has completed.
+   */
+  void leafDone() throws IOException;
+
 }

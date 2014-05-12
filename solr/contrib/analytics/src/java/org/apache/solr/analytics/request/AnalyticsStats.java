@@ -24,6 +24,7 @@ import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.DocIdSet;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.Filter;
+import org.apache.lucene.search.LeafCollector;
 import org.apache.solr.analytics.accumulator.BasicAccumulator;
 import org.apache.solr.analytics.accumulator.FacetingAccumulator;
 import org.apache.solr.analytics.accumulator.ValueAccumulator;
@@ -113,15 +114,18 @@ public class AnalyticsStats {
         }
 
         if (disi != null) {
-          accumulator.getLeafCollector(context);
+          final LeafCollector leafCollector = accumulator.getLeafCollector(context);
           int doc = disi.nextDoc();
           while( doc != DocIdSetIterator.NO_MORE_DOCS){
             // Add a document to the statistics being generated
-            accumulator.collect(doc);
+            leafCollector.collect(doc);
             doc = disi.nextDoc();
           }
+          leafCollector.leafDone();
         }
       }
+
+      accumulator.done();
       
       // do some post-processing
       accumulator.postProcess();

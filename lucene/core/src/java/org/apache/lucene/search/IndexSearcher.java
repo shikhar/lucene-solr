@@ -546,6 +546,8 @@ public class IndexSearcher {
         }
       }
 
+      topCollector.done();
+
       final TopFieldDocs topDocs = (TopFieldDocs) topCollector.topDocs();
 
       return new TopFieldDocs(totalHits, topDocs.scoreDocs, topDocs.fields, topDocs.getMaxScore());
@@ -617,7 +619,10 @@ public class IndexSearcher {
           // continue with the following leaf
         }
       }
+      leafCollector.leafDone();
     }
+
+    collector.done();
   }
 
   /** Expert: called to re-write queries into primitive queries.
@@ -787,6 +792,7 @@ public class IndexSearcher {
           fakeScorer.score = scoreDoc.score;
           collector.collect(scoreDoc.doc-base);
         }
+        collector.leafDone();
 
         // Carry over maxScore from sub:
         if (doMaxScore && docs.getMaxScore() > hq.maxScore) {

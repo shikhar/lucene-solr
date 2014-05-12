@@ -101,7 +101,7 @@ public class BasicAccumulator extends ValueAccumulator {
       statsCollector.collect(doc);
     }
   }
-  
+
   @Override
   public void compute() {
     for (StatsCollector statsCollector : statsCollectors) {

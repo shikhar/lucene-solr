@@ -421,7 +421,7 @@ public class ToParentBlockJoinCollector extends SimpleCollector {
       }
 
       collector.setScorer(fakeScorer);
-      collector.getLeafCollector(og.readerContext);
+      final LeafCollector leafCollector = collector.getLeafCollector(og.readerContext);
       for(int docIDX=0;docIDX<numChildDocs;docIDX++) {
         //System.out.println("docIDX=" + docIDX + " vs " + og.docs[slot].length);
         final int doc = og.docs[slot][docIDX];
@@ -429,8 +429,10 @@ public class ToParentBlockJoinCollector extends SimpleCollector {
         if (trackScores) {
           fakeScorer.score = og.scores[slot][docIDX];
         }
-        collector.collect(doc);
+        leafCollector.collect(doc);
       }
+      leafCollector.leafDone();
+      collector.done();
       totalGroupedHitCount += numChildDocs;
 
       final Object[] groupSortValues;

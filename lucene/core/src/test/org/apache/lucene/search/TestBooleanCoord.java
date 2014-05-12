@@ -737,6 +737,10 @@ public class TestBooleanCoord extends LuceneTestCase {
         public boolean acceptsDocsOutOfOrder() {
           return true;
         }
+
+        @Override
+        public void leafDone() throws IOException {
+        }
       }, 1);
       assertTrue(seen.get());
     }

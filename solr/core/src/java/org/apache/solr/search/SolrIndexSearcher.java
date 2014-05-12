@@ -1007,7 +1007,11 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
           leafCollector.collect(docid);
         }
       }
+
+      leafCollector.leafDone();
     }
+
+    collector.done();
 
     if(collector instanceof DelegatingCollector) {
       ((DelegatingCollector) collector).finish();
@@ -2014,17 +2018,26 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
     int end=0;
     int readerIndex = 0;
 
+    LeafCollector leafCollector = null;
     while (iter.hasNext()) {
       int doc = iter.nextDoc();
       while (doc>=end) {
         LeafReaderContext leaf = leafContexts.get(readerIndex++);
         base = leaf.docBase;
         end = base + leaf.reader().maxDoc();
-        topCollector.getLeafCollector(leaf);
+        if (leafCollector != null) {
+          leafCollector.leafDone();
+        }
+        leafCollector = topCollector.getLeafCollector(leaf);
         // we should never need to set the scorer given the settings for the collector
       }
       topCollector.collect(doc-base);
     }
+    if (leafCollector != null) {
+      leafCollector.leafDone();
+    }
+
+    topCollector.done();
     
     TopDocs topDocs = topCollector.topDocs(0, nDocs);
 

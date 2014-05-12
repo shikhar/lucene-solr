@@ -69,6 +69,12 @@ public class DelegatingCollector extends SimpleCollector {
   }
 
   @Override
+  public void leafDone() throws IOException {
+    if (leafDelegate != null) {
+      leafDelegate.leafDone();
+    }
+  }
+
   protected void doSetNextReader(LeafReaderContext context) throws IOException {
     this.context = context;
     this.docBase = context.docBase;
@@ -78,6 +84,11 @@ public class DelegatingCollector extends SimpleCollector {
   @Override
   public boolean acceptsDocsOutOfOrder() {
     return leafDelegate.acceptsDocsOutOfOrder();
+  }
+
+  @Override
+  public void done() throws IOException {
+    delegate.done();
   }
 
   public void finish() throws IOException {

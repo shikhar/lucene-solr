@@ -101,6 +101,13 @@ public class MultiCollector implements Collector {
     return new MultiLeafCollector(leafCollectors);
   }
 
+  @Override
+  public void done() throws IOException {
+    for (Collector c: collectors) {
+      c.done();
+    }
+  }
+
 
   private static class MultiLeafCollector implements LeafCollector {
 
@@ -132,6 +139,13 @@ public class MultiCollector implements Collector {
         }
       }
       return true;
+    }
+
+    @Override
+    public void leafDone() throws IOException {
+      for (LeafCollector c : collectors) {
+        c.leafDone();
+      }
     }
 
   }

@@ -49,6 +49,11 @@ public class FilterLeafCollector implements LeafCollector {
   }
 
   @Override
+  public void leafDone() throws IOException {
+    in.leafDone();
+  }
+
+  @Override
   public String toString() {
     return getClass().getSimpleName() + "(" + in + ")";
   }

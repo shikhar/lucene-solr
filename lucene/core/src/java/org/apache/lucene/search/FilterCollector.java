@@ -41,6 +41,11 @@ public class FilterCollector implements Collector {
   }
 
   @Override
+  public void done() throws IOException {
+    in.done();
+  }
+
+  @Override
   public String toString() {
     return getClass().getSimpleName() + "(" + in + ")";
   }

@@ -150,6 +150,13 @@ class DrillSidewaysScorer extends BulkScorer {
       doUnionScoring(collector, disis, sidewaysCollectors);
     }
 
+    if (drillDownLeafCollector != null) {
+      drillDownLeafCollector.leafDone();
+    }
+    for (DocsAndCost dim : dims) {
+      dim.sidewaysLeafCollector.leafDone();
+    }
+
     return false;
   }
 

@@ -73,4 +73,11 @@ public interface Collector {
    */
   LeafCollector getLeafCollector(LeafReaderContext context) throws IOException;
 
+  /**
+   * Advise that collection is complete.
+   *
+   * @throws IOException
+   */
+  void done() throws IOException;
+
 }

@@ -50,4 +50,14 @@ public abstract class SimpleCollector implements Collector, LeafCollector {
   @Override
   public abstract void collect(int doc) throws IOException;
 
+  @Override
+  public void leafDone() throws IOException {
+    // no-op by default
+  }
+
+  @Override
+  public void done() throws IOException {
+    // no-op by default
+  }
+
 }

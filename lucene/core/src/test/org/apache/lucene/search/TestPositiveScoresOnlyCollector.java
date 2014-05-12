@@ -93,6 +93,8 @@ public class TestPositiveScoresOnlyCollector extends LuceneTestCase {
     while (s.nextDoc() != DocIdSetIterator.NO_MORE_DOCS) {
       ac.collect(0);
     }
+    ac.leafDone();
+    c.done();
     TopDocs td = tdc.topDocs();
     ScoreDoc[] sd = td.scoreDocs;
     assertEquals(numPositiveScores, td.totalHits);
