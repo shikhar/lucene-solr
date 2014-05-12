@@ -164,7 +164,12 @@ public class TestBooleanQueryVisitSubscorers extends LuceneTestCase {
         
       };
     }
-    
+
+    @Override
+    public boolean isParallelizable() {
+      return false;
+    }
+
     private void fillLeaves(Scorer scorer, Set<Scorer> set) {
       if (scorer.getWeight().getQuery() instanceof TermQuery) {
         set.add(scorer);
@@ -261,6 +266,16 @@ public class TestBooleanQueryVisitSubscorers extends LuceneTestCase {
 
     @Override
     public void done() throws IOException {
+    }
+
+    @Override
+    public boolean isParallelizable() {
+      return false;
+    }
+
+    @Override
+    public void setParallelized() {
+
     }
 
     private static void summarizeScorer(final StringBuilder builder, final Scorer scorer, final int indent) {

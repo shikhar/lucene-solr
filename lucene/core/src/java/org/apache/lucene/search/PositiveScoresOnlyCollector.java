@@ -55,4 +55,9 @@ public class PositiveScoresOnlyCollector extends FilterCollector {
     };
   }
 
+  @Override
+  public boolean isParallelizable() {
+    return in.isParallelizable();
+  }
+
 }

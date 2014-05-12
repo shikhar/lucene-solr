@@ -156,14 +156,23 @@ public class TimeLimitingCollector implements Collector {
       
     };
   }
-
   @Override
   public void done() throws IOException {
     collector.done();
   }
 
+
+  @Override
+  public boolean isParallelizable() {
+    return false;
+  }
+
+  @Override
+  public void setParallelized() {
+  }
+
   /**
-   * This is so the same timer can be used with a multi-phase search process such as grouping. 
+   * This is so the same timer can be used with a multi-phase search process such as grouping.
    * We don't want to create a new TimeLimitingCollector for each phase because that would 
    * reset the timer for each phase.  Once time is up subsequent phases need to timeout quickly.
    *

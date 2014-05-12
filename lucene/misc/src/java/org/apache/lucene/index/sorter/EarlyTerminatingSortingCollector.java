@@ -117,4 +117,9 @@ public class EarlyTerminatingSortingCollector extends FilterCollector {
     }
   }
 
+  @Override
+  public boolean isParallelizable() {
+    return in.isParallelizable();
+  }
+
 }

@@ -63,5 +63,10 @@ public class AssertingCollector extends FilterCollector {
     };
   }
 
+  @Override
+  public boolean isParallelizable() {
+    return in.isParallelizable();
+  }
+
 }
 

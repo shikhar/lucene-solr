@@ -86,4 +86,9 @@ public class EarlyTerminatingCollector extends FilterCollector {
     };
   }
 
+  @Override
+  public boolean isParallelizable() {
+    return false;
+  }
+
 }

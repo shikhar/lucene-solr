@@ -55,6 +55,11 @@ public class FilterCollector extends org.apache.lucene.search.FilterCollector {
     };
   }
 
+  @Override
+  public boolean isParallelizable() {
+    return false;
+  }
+
   public int getMatches() {
     return matches;
   }

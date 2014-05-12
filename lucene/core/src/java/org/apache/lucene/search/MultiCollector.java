@@ -108,6 +108,22 @@ public class MultiCollector implements Collector {
     }
   }
 
+  @Override
+  public boolean isParallelizable() {
+    for (Collector c: collectors) {
+      if (!c.isParallelizable()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @Override
+  public void setParallelized() {
+    for (Collector c: collectors) {
+      c.setParallelized();
+    }
+  }
 
   private static class MultiLeafCollector implements LeafCollector {
 

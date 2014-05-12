@@ -368,6 +368,11 @@ public abstract class CachingCollector extends FilterCollector {
     cached = true;
   }
 
+  @Override
+  public boolean isParallelizable() {
+    return false;
+  }
+
   /**
    * Return true is this collector is able to replay collection.
    */

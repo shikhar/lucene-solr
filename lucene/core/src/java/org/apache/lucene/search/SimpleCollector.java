@@ -60,4 +60,13 @@ public abstract class SimpleCollector implements Collector, LeafCollector {
     // no-op by default
   }
 
+  @Override
+  public boolean isParallelizable() {
+    return false;
+  }
+
+  @Override
+  public void setParallelized() {
+  }
+
 }

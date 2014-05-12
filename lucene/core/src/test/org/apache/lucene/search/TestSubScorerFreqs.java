@@ -116,6 +116,11 @@ public class TestSubScorerFreqs extends LuceneTestCase {
       };
     }
 
+    @Override
+    public boolean isParallelizable() {
+      return false;
+    }
+
   }
 
   private static final float FLOAT_TOLERANCE = 0.00001F;

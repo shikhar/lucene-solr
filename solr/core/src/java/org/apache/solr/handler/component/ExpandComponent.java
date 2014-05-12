@@ -369,6 +369,15 @@ public class ExpandComponent extends SearchComponent implements PluginInfoInitia
       }
     }
 
+    @Override
+    public boolean isParallelizable() {
+      return false;
+    }
+
+    @Override
+    public void setParallelized() {
+    }
+
     public IntObjectMap<Collector> getGroups() {
       return groups;
     }

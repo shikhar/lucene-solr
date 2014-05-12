@@ -289,6 +289,11 @@ public class TestSort extends SolrTestCaseJ4 {
             };
           }
 
+          @Override
+          public boolean isParallelizable() {
+            return false;
+          }
+
         };
 
         searcher.search(new MatchAllDocsQuery(), filt, myCollector);

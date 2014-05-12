@@ -26,7 +26,7 @@ import org.apache.lucene.index.LeafReaderContext;
  *
  * @lucene.experimental
  */
-public class FilterCollector implements Collector {
+public abstract class FilterCollector implements Collector {
 
   protected final Collector in;
 
@@ -43,6 +43,16 @@ public class FilterCollector implements Collector {
   @Override
   public void done() throws IOException {
     in.done();
+  }
+
+  @Override
+  public void setParallelized() {
+    in.setParallelized();
+  }
+
+  @Override
+  public boolean isParallelizable() {
+    return in.isParallelizable();
   }
 
   @Override

@@ -80,4 +80,28 @@ public interface Collector {
    */
   void done() throws IOException;
 
+  /**
+   * Parallel collection implies that multiple threads may operate on {@link LeafCollector} instances at a time
+   * except for the {@link LeafCollector#leafDone()} method which can be safely assumed to always be
+   * externally synchronized.
+   *
+   * It can be safely assumed that all calls on this {@link Collector} itself are externally synchronized.
+   *
+   * @return whether parallel collection is supported
+   */
+  boolean isParallelizable();
+
+  /**
+   * <p>Advise this collector about whether parallel collection will be performed.</p>
+   * <p>This method can only be called if {@link #isParallelizable()} returns {@code true}.<p/>
+   * <p>This is intended as a way for implementations to adjust strategy in case the optimal solution is very different
+   * for serial vs parallel collection, e.g. it may be desirable to accumulate shared state rather than
+   * divide-and-conquer.</p>
+   * <p>NOTE: this method may be invoked <em>after</em> calls to
+   * {@link #getLeafCollector(LeafReaderContext)} have been made, however only the {@link LeafCollector} insatnces
+   * created after this hint is provided are required to be parallelizable as defined in {@link #isParallelizable()}.
+   * </p>
+   */
+  void setParallelized();
+
 }
