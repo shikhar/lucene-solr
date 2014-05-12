@@ -43,13 +43,13 @@ public class AssertingIndexSearcher extends IndexSearcher {
     this.random = new Random(random.nextLong());
   }
   
-  public  AssertingIndexSearcher(Random random, IndexReader r, ExecutorService ex) {
-    super(r, ex);
+  public  AssertingIndexSearcher(Random random, IndexReader r, SearchStrategy searchStrategy) {
+    super(r, searchStrategy);
     this.random = new Random(random.nextLong());
   }
   
-  public  AssertingIndexSearcher(Random random, IndexReaderContext context, ExecutorService ex) {
-    super(context, ex);
+  public  AssertingIndexSearcher(Random random, IndexReaderContext context, SearchStrategy searchStrategy) {
+    super(context, searchStrategy);
     this.random = new Random(random.nextLong());
   }
   

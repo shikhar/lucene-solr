@@ -108,7 +108,10 @@ import org.apache.lucene.index.TieredMergePolicy;
 import org.apache.lucene.search.AssertingIndexSearcher;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.ParallelSearchStrategy;
 import org.apache.lucene.search.QueryUtils.FCInvisibleMultiReader;
+import org.apache.lucene.search.SearchStrategy;
+import org.apache.lucene.search.SerialSearchStrategy;
 import org.apache.lucene.store.BaseDirectoryWrapper;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
@@ -1666,13 +1669,16 @@ public abstract class LuceneTestCase extends Assert {
     } else {
       int threads = 0;
       final ThreadPoolExecutor ex;
+      final SearchStrategy searchStrategy;
       if (random.nextBoolean()) {
         ex = null;
+        searchStrategy = new SerialSearchStrategy();
       } else {
         threads = TestUtil.nextInt(random, 1, 8);
         ex = new ThreadPoolExecutor(threads, threads, 0L, TimeUnit.MILLISECONDS,
             new LinkedBlockingQueue<Runnable>(),
             new NamedThreadFactory("LuceneTestCase"));
+        searchStrategy = new ParallelSearchStrategy(ex);
         // uncomment to intensify LUCENE-3840
         // ex.prestartAllCoreThreads();
       }
@@ -1690,12 +1696,12 @@ public abstract class LuceneTestCase extends Assert {
       IndexSearcher ret;
       if (wrapWithAssertions) {
         ret = random.nextBoolean()
-            ? new AssertingIndexSearcher(random, r, ex)
-            : new AssertingIndexSearcher(random, r.getContext(), ex);
+            ? new AssertingIndexSearcher(random, r, searchStrategy)
+            : new AssertingIndexSearcher(random, r.getContext(), searchStrategy);
       } else {
         ret = random.nextBoolean()
-            ? new IndexSearcher(r, ex)
-            : new IndexSearcher(r.getContext(), ex);
+            ? new IndexSearcher(r, searchStrategy)
+            : new IndexSearcher(r.getContext(), searchStrategy);
       }
       ret.setSimilarity(classEnvRule.similarity);
       return ret;

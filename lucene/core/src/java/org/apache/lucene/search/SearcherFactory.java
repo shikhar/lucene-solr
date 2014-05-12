@@ -39,7 +39,8 @@ import org.apache.lucene.search.similarities.Similarity; // javadocs
  * You can pass your own factory instead if you want custom behavior, such as:
  * <ul>
  *   <li>Setting a custom scoring model: {@link IndexSearcher#setSimilarity(Similarity)}
- *   <li>Parallel per-segment search: {@link IndexSearcher#IndexSearcher(IndexReader, ExecutorService)}
+ *    <li>Parallel per-segment search: {@link IndexSearcher#IndexSearcher(IndexReader, SearchStrategy)} with a
+ *    {@link ParallelSearchStrategy}.
  *   <li>Return custom subclasses of IndexSearcher (for example that implement distributed scoring)
  *   <li>Run queries to warm your IndexSearcher before it is used. Note: when using near-realtime search
  *       you may want to also {@link IndexWriterConfig#setMergedSegmentWarmer(IndexWriter.IndexReaderWarmer)} to warm

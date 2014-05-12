@@ -69,7 +69,7 @@ public class TestIndexSearcher extends LuceneTestCase {
     
     IndexSearcher searchers[] = new IndexSearcher[] {
         new IndexSearcher(reader),
-        new IndexSearcher(reader, service)
+        new IndexSearcher(reader, new ParallelSearchStrategy(service))
     };
     Query queries[] = new Query[] {
         new MatchAllDocsQuery(),

@@ -221,7 +221,8 @@ public class TestControlledRealTimeReopenThread extends ThreadedIndexingAndSearc
         @Override
         public IndexSearcher newSearcher(IndexReader r) throws IOException {
           TestControlledRealTimeReopenThread.this.warmCalled = true;
-          IndexSearcher s = new IndexSearcher(r, es);
+          IndexSearcher s = new IndexSearcher(r,
+              es == null ? new SerialSearchStrategy() : new ParallelSearchStrategy(es));
           s.search(new TermQuery(new Term("body", "united")), 10);
           return s;
         }
