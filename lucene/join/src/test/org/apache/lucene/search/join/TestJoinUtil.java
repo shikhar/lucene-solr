@@ -52,9 +52,12 @@ import org.apache.lucene.index.Terms;
 import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.Explanation;
+import org.apache.lucene.search.FilterLeafCollector;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
@@ -476,41 +479,39 @@ public class TestJoinUtil extends LuceneTestCase {
         // Need to know all documents that have matches. TopDocs doesn't give me that and then I'd be also testing TopDocsCollector...
         final FixedBitSet actualResult = new FixedBitSet(indexSearcher.getIndexReader().maxDoc());
         final TopScoreDocCollector topScoreDocCollector = TopScoreDocCollector.create(10, false);
-        indexSearcher.search(joinQuery, new SimpleCollector() {
-
-          int docBase;
+        indexSearcher.search(joinQuery, new Collector() {
 
           @Override
-          public void collect(int doc) throws IOException {
-            actualResult.set(doc + docBase);
-            topScoreDocCollector.collect(doc);
-          }
+          public LeafCollector getLeafCollector(final LeafReaderContext context) {
+            return new FilterLeafCollector(topScoreDocCollector.getLeafCollector(context)) {
 
-          @Override
-          protected void doSetNextReader(LeafReaderContext context) throws IOException {
-            docBase = context.docBase;
-            topScoreDocCollector.getLeafCollector(context);
-          }
 
-          @Override
-          public void leafDone() throws IOException {
-            topScoreDocCollector.leafDone();
+              @Override
+              public void collect(int doc) throws IOException {
+                super.collect(doc);
+                actualResult.set(doc + context.docBase);
+              }
+
+              @Override
+              public boolean acceptsDocsOutOfOrder() {
+                return scoreDocsInOrder;
+              }
+            };
           }
 
           @Override
           public void done() throws IOException {
-            topScoreDocCollector.done();
           }
 
           @Override
-          public void setScorer(Scorer scorer) throws IOException {
-            topScoreDocCollector.setScorer(scorer);
+          public boolean isParallelizable() {
+            return false;
           }
 
           @Override
-          public boolean acceptsDocsOutOfOrder() {
-            return scoreDocsInOrder;
+          public void setParallelized() {
           }
+
         });
         // Asserting bit set...
         if (VERBOSE) {

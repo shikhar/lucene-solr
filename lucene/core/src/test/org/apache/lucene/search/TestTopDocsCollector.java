@@ -28,13 +28,19 @@ import org.apache.lucene.util.LuceneTestCase;
 
 public class TestTopDocsCollector extends LuceneTestCase {
 
-  private static final class MyTopsDocCollector extends TopDocsCollector<ScoreDoc> {
+  private static final class MyTopsDocCollector extends TopDocsCollector<ScoreDoc> implements LeafCollector {
 
     private int idx = 0;
     private int base = 0;
+    private int totalHits = 0;
     
     public MyTopsDocCollector(int size) {
       super(new HitQueue(size, false));
+    }
+
+    @Override
+    public int getTotalHits() {
+      return totalHits;
     }
     
     @Override
@@ -51,9 +57,9 @@ public class TestTopDocsCollector extends LuceneTestCase {
         maxScore = pq.pop().score;
       }
       
-      return new TopDocs(totalHits, results, maxScore);
+      return new TopDocs(getTotalHits(), results, maxScore);
     }
-    
+
     @Override
     public void collect(int doc) {
       ++totalHits;
@@ -61,8 +67,18 @@ public class TestTopDocsCollector extends LuceneTestCase {
     }
 
     @Override
-    protected void doSetNextReader(LeafReaderContext context) throws IOException {
+    public LeafCollector getLeafCollector(LeafReaderContext context) throws IOException {
       base = context.docBase;
+      return this;
+    }
+
+    @Override
+    public boolean isParallelizable() {
+      return false;
+    }
+
+    @Override
+    public void setParallelized() {
     }
 
     @Override
@@ -73,6 +89,14 @@ public class TestTopDocsCollector extends LuceneTestCase {
     @Override
     public boolean acceptsDocsOutOfOrder() {
       return true;
+    }
+
+    @Override
+    public void leafDone() throws IOException {
+    }
+
+    @Override
+    public void done() throws IOException {
     }
 
   }

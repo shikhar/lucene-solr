@@ -420,8 +420,8 @@ public class ToParentBlockJoinCollector extends SimpleCollector {
         collector = TopFieldCollector.create(withinGroupSort, numDocsInGroup, fillSortFields, trackScores, trackMaxScore, true);
       }
 
-      collector.setScorer(fakeScorer);
       final LeafCollector leafCollector = collector.getLeafCollector(og.readerContext);
+      leafCollector.setScorer(fakeScorer);
       for(int docIDX=0;docIDX<numChildDocs;docIDX++) {
         //System.out.println("docIDX=" + docIDX + " vs " + og.docs[slot].length);
         final int doc = og.docs[slot][docIDX];

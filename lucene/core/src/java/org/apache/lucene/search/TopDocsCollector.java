@@ -31,12 +31,12 @@ import org.apache.lucene.util.PriorityQueue;
  * however, you might want to consider overriding all methods, in order to avoid
  * a NullPointerException.
  */
-public abstract class TopDocsCollector<T extends ScoreDoc> extends SimpleCollector {
+public abstract class TopDocsCollector<T extends ScoreDoc> implements Collector {
 
   /** This is used in case topDocs() is called with illegal parameters, or there
    *  simply aren't (enough) results. */
   protected static final TopDocs EMPTY_TOPDOCS = new TopDocs(0, new ScoreDoc[0], Float.NaN);
-  
+
   /**
    * The priority queue which holds the top documents. Note that different
    * implementations of PriorityQueue give different meaning to 'top documents'.
@@ -45,19 +45,16 @@ public abstract class TopDocsCollector<T extends ScoreDoc> extends SimpleCollect
    */
   protected PriorityQueue<T> pq;
 
-  /** The total number of documents that the collector encountered. */
-  protected int totalHits;
-  
   protected TopDocsCollector(PriorityQueue<T> pq) {
     this.pq = pq;
   }
-  
+
   /**
    * Populates the results array with the ScoreDoc instances. This can be
    * overridden in case a different ScoreDoc type should be returned.
    */
   protected void populateResults(ScoreDoc[] results, int howMany) {
-    for (int i = howMany - 1; i >= 0; i--) { 
+    for (int i = howMany - 1; i >= 0; i--) {
       results[i] = pq.pop();
     }
   }
@@ -69,22 +66,20 @@ public abstract class TopDocsCollector<T extends ScoreDoc> extends SimpleCollect
    * topDocs were invalid.
    */
   protected TopDocs newTopDocs(ScoreDoc[] results, int start) {
-    return results == null ? EMPTY_TOPDOCS : new TopDocs(totalHits, results);
+    return results == null ? EMPTY_TOPDOCS : new TopDocs(getTotalHits(), results);
   }
-  
+
   /** The total number of documents that matched this query. */
-  public int getTotalHits() {
-    return totalHits;
-  }
-  
+  public abstract int getTotalHits();
+
   /** The number of valid PQ entries */
   protected int topDocsSize() {
     // In case pq was populated with sentinel values, there might be less
     // results than pq.size(). Therefore return all results until either
     // pq.size() or totalHits.
-    return totalHits < pq.size() ? totalHits : pq.size();
+    return getTotalHits() < pq.size() ? getTotalHits() : pq.size();
   }
-  
+
   /** Returns the top docs that were collected by this collector. */
   public TopDocs topDocs() {
     // In case pq was populated with sentinel values, there might be less
@@ -127,7 +122,7 @@ public abstract class TopDocsCollector<T extends ScoreDoc> extends SimpleCollect
    * search execution collected.
    */
   public TopDocs topDocs(int start, int howMany) {
-    
+
     // In case pq was populated with sentinel values, there might be less
     // results than pq.size(). Therefore return all results until either
     // pq.size() or totalHits.
@@ -151,10 +146,10 @@ public abstract class TopDocsCollector<T extends ScoreDoc> extends SimpleCollect
     // should be that the caller asks for the last howMany results. However it's
     // needed here for completeness.
     for (int i = pq.size() - start - howMany; i > 0; i--) { pq.pop(); }
-    
+
     // Get the requested results from pq.
     populateResults(results, howMany);
-    
+
     return newTopDocs(results, start);
   }
 

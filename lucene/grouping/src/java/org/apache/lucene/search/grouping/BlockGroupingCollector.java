@@ -349,8 +349,8 @@ public class BlockGroupingCollector extends SimpleCollector {
         collector = TopFieldCollector.create(withinGroupSort, maxDocsPerGroup, fillSortFields, needsScores, needsScores, true);
       }
 
-      collector.setScorer(fakeScorer);
       final LeafCollector leafCollector = collector.getLeafCollector(og.readerContext);
+      leafCollector.setScorer(fakeScorer);
       for(int docIDX=0;docIDX<og.count;docIDX++) {
         final int doc = og.docs[docIDX];
         fakeScorer.doc = doc;

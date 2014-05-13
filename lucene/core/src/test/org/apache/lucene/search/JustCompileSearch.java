@@ -95,7 +95,7 @@ final class JustCompileSearch {
       throw new UnsupportedOperationException(UNSUPPORTED_MSG);
     }
   }
-  
+
   static final class JustCompileFieldComparator extends FieldComparator<Object> {
 
     @Override
@@ -260,23 +260,8 @@ final class JustCompileSearch {
     }
 
     @Override
-    public void collect(int doc) {
-      throw new UnsupportedOperationException(UNSUPPORTED_MSG);
-    }
-
-    @Override
-    protected void doSetNextReader(LeafReaderContext context) throws IOException {
-      throw new UnsupportedOperationException(UNSUPPORTED_MSG);
-    }
-
-    @Override
-    public void setScorer(Scorer scorer) {
-      throw new UnsupportedOperationException(UNSUPPORTED_MSG);
-    }
-    
-    @Override
-    public boolean acceptsDocsOutOfOrder() {
-      throw new UnsupportedOperationException(UNSUPPORTED_MSG);
+    public int getTotalHits() {
+      throw new UnsupportedOperationException( UNSUPPORTED_MSG );
     }
 
     @Override
@@ -293,7 +278,27 @@ final class JustCompileSearch {
     public TopDocs topDocs( int start, int end ) {
         throw new UnsupportedOperationException( UNSUPPORTED_MSG );
     }
-    
+
+    @Override
+    public LeafCollector getLeafCollector(LeafReaderContext context) throws IOException {
+      throw new UnsupportedOperationException( UNSUPPORTED_MSG );
+    }
+
+    @Override
+    public void done() throws IOException {
+      throw new UnsupportedOperationException( UNSUPPORTED_MSG );
+    }
+
+    @Override
+    public boolean isParallelizable() {
+      throw new UnsupportedOperationException( UNSUPPORTED_MSG );
+    }
+
+    @Override
+    public void setParallelized() {
+      throw new UnsupportedOperationException( UNSUPPORTED_MSG );
+    }
+
   }
 
   static final class JustCompileWeight extends Weight {

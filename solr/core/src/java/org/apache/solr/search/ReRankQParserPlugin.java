@@ -20,6 +20,8 @@ package org.apache.solr.search;
 import com.carrotsearch.hppc.IntIntOpenHashMap;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.Explanation;
+import org.apache.lucene.search.FilterLeafCollector;
+import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.search.QueryRescorer;
@@ -255,22 +257,6 @@ public class ReRankQParserPlugin extends QParserPlugin {
       this.reRankWeight = reRankWeight;
     }
 
-    public boolean acceptsDocsOutOfOrder() {
-      return false;
-    }
-
-    public void collect(int doc) throws IOException {
-      mainCollector.collect(doc);
-    }
-
-    public void setScorer(Scorer scorer) throws IOException{
-      mainCollector.setScorer(scorer);
-    }
-
-    public void doSetNextReader(LeafReaderContext context) throws IOException{
-      mainCollector.getLeafCollector(context);
-    }
-
     public int getTotalHits() {
       return mainCollector.getTotalHits();
     }
@@ -386,6 +372,31 @@ public class ReRankQParserPlugin extends QParserPlugin {
       } catch (Exception e) {
         throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, e);
       }
+    }
+
+    @Override
+    public LeafCollector getLeafCollector(LeafReaderContext context) throws IOException {
+      return new FilterLeafCollector(mainCollector.getLeafCollector(context)) {
+        @Override
+        public boolean acceptsDocsOutOfOrder() {
+          return false;
+        }
+      };
+    }
+
+    @Override
+    public void done() throws IOException {
+      mainCollector.done();
+    }
+
+    @Override
+    public boolean isParallelizable() {
+      return mainCollector.isParallelizable();
+    }
+
+    @Override
+    public void setParallelized() {
+      mainCollector.setParallelized();
     }
   }
 

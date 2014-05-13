@@ -138,7 +138,7 @@ public class TestBoolean2 extends LuceneTestCase {
     searcher.search(query, null, collector);
     ScoreDoc[] hits2 = collector.topDocs().scoreDocs; 
 
-    assertEquals(mulFactor * collector.totalHits,
+    assertEquals(mulFactor * collector.getTotalHits(),
                  bigSearcher.search(query, 1).totalHits);
       
     CheckHits.checkHitsQuery(query, hits1, hits2, expDocNrs);
@@ -299,7 +299,7 @@ public class TestBoolean2 extends LuceneTestCase {
         q3.add(q1, BooleanClause.Occur.SHOULD);
         q3.add(new PrefixQuery(new Term("field2", "b")), BooleanClause.Occur.SHOULD);
         TopDocs hits4 = bigSearcher.search(q3, 1);
-        assertEquals(mulFactor*collector.totalHits + NUM_EXTRA_DOCS/2, hits4.totalHits);
+        assertEquals(mulFactor*collector.getTotalHits() + NUM_EXTRA_DOCS/2, hits4.totalHits);
       }
 
     } catch (Exception e) {

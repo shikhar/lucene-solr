@@ -23,6 +23,7 @@ import org.apache.lucene.index.IndexReaderContext;
 import org.apache.lucene.index.NumericDocValues;
 import org.apache.lucene.index.ReaderUtil;
 import org.apache.lucene.search.FieldComparator;
+import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
@@ -705,24 +706,9 @@ public class TestRankQueryPlugin extends QParserPlugin {
   class TestCollector extends TopDocsCollector {
 
     private List<ScoreDoc> list = new ArrayList();
-    private NumericDocValues values;
-    private int base;
 
     public TestCollector(PriorityQueue pq) {
       super(pq);
-    }
-
-    public boolean acceptsDocsOutOfOrder() {
-      return false;
-    }
-
-    public void doSetNextReader(LeafReaderContext context) throws IOException {
-      values = DocValues.getNumeric(context.reader(), "sort_i");
-      base = context.docBase;
-    }
-
-    public void collect(int doc) {
-      list.add(new ScoreDoc(doc+base, (float)values.get(doc)));
     }
 
     public int topDocsSize() {
@@ -754,38 +740,62 @@ public class TestRankQueryPlugin extends QParserPlugin {
     public int getTotalHits() {
       return list.size();
     }
+
+    @Override
+    public LeafCollector getLeafCollector(final LeafReaderContext context) throws IOException {
+      final NumericDocValues values = DocValues.getNumeric(context.reader(), "sort_i");
+      return new LeafCollector() {
+        @Override
+        public void setScorer(Scorer scorer) throws IOException {
+
+        }
+
+        @Override
+        public void collect(int doc) throws IOException {
+          list.add(new ScoreDoc(doc+context.docBase, (float)values.get(doc)));
+        }
+
+        @Override
+        public boolean acceptsDocsOutOfOrder() {
+          return false;
+        }
+
+        @Override
+        public void leafDone() throws IOException {
+
+        }
+      };
+    }
+
+    @Override
+    public void done() throws IOException {
+    }
+
+    @Override
+    public boolean isParallelizable() {
+      return false;
+    }
+
+    @Override
+    public void setParallelized() {
+    }
+
   }
 
   class TestCollector1 extends TopDocsCollector {
 
     private List<ScoreDoc> list = new ArrayList();
-    private int base;
-    private Scorer scorer;
 
     public TestCollector1(PriorityQueue pq) {
       super(pq);
     }
 
-    public boolean acceptsDocsOutOfOrder() {
-      return false;
-    }
-
-    public void doSetNextReader(LeafReaderContext context) throws IOException {
-      base = context.docBase;
-    }
-
-    public void setScorer(Scorer scorer) {
-      this.scorer = scorer;
-    }
-
-    public void collect(int doc) throws IOException {
-      list.add(new ScoreDoc(doc+base, scorer.score()));
-    }
-
+    @Override
     public int topDocsSize() {
       return list.size();
     }
 
+    @Override
     public TopDocs topDocs() {
       Collections.sort(list, new Comparator() {
         public int compare(Object o1, Object o2) {
@@ -804,13 +814,56 @@ public class TestRankQueryPlugin extends QParserPlugin {
       return new TopDocs(list.size(), scoreDocs, 0.0f);
     }
 
+    @Override
     public TopDocs topDocs(int start, int len) {
       return topDocs();
     }
 
+    @Override
     public int getTotalHits() {
       return list.size();
     }
+
+    @Override
+    public LeafCollector getLeafCollector(final LeafReaderContext context) throws IOException {
+      return new LeafCollector() {
+        private Scorer scorer;
+
+        @Override
+        public void setScorer(Scorer scorer) throws IOException {
+          this.scorer = scorer;
+        }
+
+        @Override
+        public void collect(int doc) throws IOException {
+          list.add(new ScoreDoc(doc+context.docBase, scorer.score()));
+        }
+
+        @Override
+        public boolean acceptsDocsOutOfOrder() {
+          return false;
+        }
+
+        @Override
+        public void leafDone() throws IOException {
+        }
+      };
+    }
+
+    @Override
+    public void done() throws IOException {
+
+    }
+
+    @Override
+    public boolean isParallelizable() {
+      return false;
+    }
+
+    @Override
+    public void setParallelized() {
+    }
+
   }
 
 

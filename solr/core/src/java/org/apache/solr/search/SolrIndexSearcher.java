@@ -2031,7 +2031,7 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
         leafCollector = topCollector.getLeafCollector(leaf);
         // we should never need to set the scorer given the settings for the collector
       }
-      topCollector.collect(doc-base);
+      leafCollector.collect(doc-base);
     }
     if (leafCollector != null) {
       leafCollector.leafDone();

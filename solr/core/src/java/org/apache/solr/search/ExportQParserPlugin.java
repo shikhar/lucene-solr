@@ -128,22 +128,12 @@ public class ExportQParserPlugin extends QParserPlugin {
   private class ExportCollector extends TopDocsCollector  {
 
     private FixedBitSet[] sets;
-    private FixedBitSet set;
+
+    int totalHits;
 
     public ExportCollector(FixedBitSet[] sets) {
       super(null);
       this.sets = sets;
-    }
-    
-    public void doSetNextReader(LeafReaderContext context) throws IOException {
-      this.set = new FixedBitSet(context.reader().maxDoc());
-      this.sets[context.ord] = set;
-
-    }
-    
-    public void collect(int docId) throws IOException{
-      ++totalHits;
-      set.set(docId);
     }
 
     private ScoreDoc[] getScoreDocs(int howMany) {
@@ -152,6 +142,11 @@ public class ExportQParserPlugin extends QParserPlugin {
         docs[i] = new ScoreDoc(i,0);
       }
       return docs;
+    }
+
+    @Override
+    public int getTotalHits() {
+      return totalHits;
     }
 
     public TopDocs topDocs(int start, int howMany) {
@@ -165,13 +160,47 @@ public class ExportQParserPlugin extends QParserPlugin {
       }
       return new TopDocs(totalHits, getScoreDocs(howMany), 0.0f);
     }
+    
+    @Override
+    public LeafCollector getLeafCollector(LeafReaderContext context) throws IOException {
+      final FixedBitSet set = new FixedBitSet(context.reader().maxDoc());
+      this.sets[context.ord] = set;
 
-    public void setScorer(Scorer scorer) throws IOException {
+      return new LeafCollector() {
+        @Override
+        public void setScorer(Scorer scorer) throws IOException {
+
+        }
+
+        @Override
+        public void collect(int docId) throws IOException{
+          ++totalHits;
+          set.set(docId);
+        }
+
+        @Override
+        public boolean acceptsDocsOutOfOrder() {
+          return false;
+        }
+
+        @Override
+        public void leafDone() throws IOException {
+        }
+      };
+    }
+
+    @Override
+    public void done() throws IOException {
 
     }
-    
-    public boolean acceptsDocsOutOfOrder() {
+
+    @Override
+    public boolean isParallelizable() {
       return false;
+    }
+
+    @Override
+    public void setParallelized() {
     }
   }
 }
