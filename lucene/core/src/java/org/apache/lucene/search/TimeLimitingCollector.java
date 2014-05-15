@@ -64,7 +64,6 @@ public class TimeLimitingCollector implements Collector {
   private final Counter clock;
   private final long ticksAllowed;
   private boolean greedy = false;
-  private int docBase;
 
   /**
    * Create a TimeLimitedCollector wrapper over another {@link Collector} with a specified timeout.
@@ -78,10 +77,10 @@ public class TimeLimitingCollector implements Collector {
     this.clock = clock;
     this.ticksAllowed = ticksAllowed;
   }
-  
+
   /**
-   * Sets the baseline for this collector. By default the collectors baseline is 
-   * initialized once the first reader is passed to the collector. 
+   * Sets the baseline for this collector. By default the collectors baseline is
+   * initialized once the first reader is passed to the collector.
    * To include operations executed in prior to the actual document collection
    * set the baseline through this method in your prelude.
    * <p>
@@ -95,13 +94,13 @@ public class TimeLimitingCollector implements Collector {
    *   indexSearcher.search(query, collector);
    * </pre>
    * </p>
-   * @see #setBaseline() 
+   * @see #setBaseline()
    */
   public void setBaseline(long clockTime) {
     t0 = clockTime;
     timeout = t0 + ticksAllowed;
   }
-  
+
   /**
    * Syntactic sugar for {@link #setBaseline(long)} using {@link Counter#get()}
    * on the clock passed to the constructor.
@@ -109,10 +108,10 @@ public class TimeLimitingCollector implements Collector {
   public void setBaseline() {
     setBaseline(clock.get());
   }
-  
+
   /**
    * Checks if this time limited collector is greedy in collecting the last hit.
-   * A non greedy collector, upon a timeout, would throw a {@link TimeExceededException} 
+   * A non greedy collector, upon a timeout, would throw a {@link TimeExceededException}
    * without allowing the wrapped collector to collect current doc. A greedy one would 
    * first allow the wrapped hit collector to collect current doc and only then 
    * throw a {@link TimeExceededException}.
@@ -130,45 +129,54 @@ public class TimeLimitingCollector implements Collector {
   public void setGreedy(boolean greedy) {
     this.greedy = greedy;
   }
-  
+
   @Override
-  public LeafCollector getLeafCollector(LeafReaderContext context) throws IOException {
-    this.docBase = context.docBase;
+  public LeafCollector getLeafCollector(final LeafReaderContext context) throws IOException {
     if (Long.MIN_VALUE == t0) {
       setBaseline();
     }
+    final int docBase = context.docBase;
     return new FilterLeafCollector(collector.getLeafCollector(context)) {
-      
+
+      /**
+       * Calls {@link org.apache.lucene.search.LeafCollector#collect(int)} on the decorated
+       * {@link org.apache.lucene.search.LeafCollector} unless the allowed time has passed, in which case it throws an
+       * exception.
+       *
+       * @throws org.apache.lucene.search.TimeLimitingCollector.TimeExceededException
+       *           if the time allowed has exceeded.
+       */
       @Override
       public void collect(int doc) throws IOException {
         final long time = clock.get();
         if (time - timeout > 0L) {
           if (greedy) {
             //System.out.println(this+"  greedy: before failing, collecting doc: "+(docBase + doc)+"  "+(time-t0));
-            in.collect(doc);
+            super.collect(doc);
           }
           //System.out.println(this+"  failing on:  "+(docBase + doc)+"  "+(time-t0));
           throw new TimeExceededException( timeout-t0, time-t0, docBase + doc );
         }
         //System.out.println(this+"  collecting: "+(docBase + doc)+"  "+(time-t0));
-        in.collect(doc);
+        super.collect(doc);
       }
-      
+
     };
   }
+
   @Override
   public void done() throws IOException {
     collector.done();
   }
 
-
   @Override
   public boolean isParallelizable() {
-    return false;
+    return collector.isParallelizable();
   }
 
   @Override
   public void setParallelized() {
+    collector.setParallelized();
   }
 
   /**
@@ -197,7 +205,7 @@ public class TimeLimitingCollector implements Collector {
   public static Counter getGlobalCounter() {
     return TimerThreadHolder.THREAD.counter;
   }
-  
+
   /**
    * Returns the global {@link TimerThread}.
    * <p>
@@ -206,14 +214,14 @@ public class TimeLimitingCollector implements Collector {
    * returned from this method is started on creation and will be alive unless
    * you stop the {@link TimerThread} via {@link TimerThread#stopTimer()}.
    * </p>
-   * 
+   *
    * @return the global {@link TimerThread}
    * @lucene.experimental
    */
   public static TimerThread getGlobalTimerThread() {
     return TimerThreadHolder.THREAD;
   }
-  
+
   private static final class TimerThreadHolder {
     static final TimerThread THREAD;
     static {
@@ -228,7 +236,7 @@ public class TimeLimitingCollector implements Collector {
    * @lucene.experimental
    */
   public static final class TimerThread extends Thread  {
-    
+
     public static final String THREAD_NAME = "TimeLimitedCollector timer thread";
     public static final int DEFAULT_RESOLUTION = 20;
     // NOTE: we can avoid explicit synchronization here for several reasons:
@@ -245,14 +253,14 @@ public class TimeLimitingCollector implements Collector {
     private volatile boolean stop = false;
     private volatile long resolution;
     final Counter counter;
-    
+
     public TimerThread(long resolution, Counter counter) {
       super(THREAD_NAME);
       this.resolution = resolution;
       this.counter = counter;
       this.setDaemon(true);
     }
-    
+
     public TimerThread(Counter counter) {
       this(DEFAULT_RESOLUTION, counter);
     }
@@ -276,22 +284,22 @@ public class TimeLimitingCollector implements Collector {
     public long getMilliseconds() {
       return time;
     }
-    
+
     /**
      * Stops the timer thread 
      */
     public void stopTimer() {
       stop = true;
     }
-    
-    /** 
+
+    /**
      * Return the timer resolution.
      * @see #setResolution(long)
      */
     public long getResolution() {
       return resolution;
     }
-    
+
     /**
      * Set the timer resolution.
      * The default timer resolution is 20 milliseconds. 
@@ -310,5 +318,5 @@ public class TimeLimitingCollector implements Collector {
       this.resolution = Math.max(resolution, 5); // 5 milliseconds is about the minimum reasonable time for a Object.wait(long) call.
     }
   }
-  
+
 }
