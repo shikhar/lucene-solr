@@ -18,11 +18,15 @@ package org.apache.lucene.search;
  */
 
 
+import org.apache.lucene.index.LeafReaderContext;
+
+import java.io.IOException;
+
 /**
  * Just counts the total number of hits.
  */
 
-public class TotalHitCountCollector extends SimpleCollector {
+public class TotalHitCountCollector implements Collector {
   private int totalHits;
 
   /** Returns how many hits matched the search. */
@@ -31,12 +35,42 @@ public class TotalHitCountCollector extends SimpleCollector {
   }
 
   @Override
-  public void collect(int doc) {
-    totalHits++;
+  public LeafCollector getLeafCollector(LeafReaderContext context) throws IOException {
+    return new LeafCollector() {
+
+      private int totalHits = 0;
+
+      @Override
+      public void setScorer(Scorer scorer) throws IOException {
+      }
+
+      @Override
+      public void collect(int doc) throws IOException {
+        totalHits++;
+      }
+
+      @Override
+      public boolean acceptsDocsOutOfOrder() {
+        return true;
+      }
+
+      @Override
+      public void leafDone() throws IOException {
+        TotalHitCountCollector.this.totalHits += totalHits;
+      }
+    };
   }
 
   @Override
-  public boolean acceptsDocsOutOfOrder() {
+  public void done() throws IOException {
+  }
+
+  @Override
+  public boolean isParallelizable() {
     return true;
+  }
+
+  @Override
+  public void setParallelized() {
   }
 }
