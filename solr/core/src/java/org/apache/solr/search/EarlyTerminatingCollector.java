@@ -18,6 +18,7 @@ package org.apache.solr.search;
  */
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.LeafCollector;
@@ -34,9 +35,8 @@ public class EarlyTerminatingCollector extends FilterCollector {
 
   private final int maxDocsToCollect;
 
-  private int numCollected = 0;
-  private int prevReaderCumulativeSize = 0;
-  private int currentReaderSize = 0;
+  private final AtomicInteger numCollected = new AtomicInteger();
+  private final AtomicInteger prevReaderCumulativeSize = new AtomicInteger();
 
   /**
    * <p>
@@ -58,9 +58,7 @@ public class EarlyTerminatingCollector extends FilterCollector {
   @Override
   public LeafCollector getLeafCollector(LeafReaderContext context)
       throws IOException {
-    prevReaderCumulativeSize += currentReaderSize; // not current any more
-    currentReaderSize = context.reader().maxDoc() - 1;
-
+    final int maxDoc = context.reader().maxDoc();
     return new FilterLeafCollector(super.getLeafCollector(context)) {
 
       /**
@@ -76,19 +74,22 @@ public class EarlyTerminatingCollector extends FilterCollector {
       @Override
       public void collect(int doc) throws IOException {
         super.collect(doc);
-        numCollected++;
-        if (maxDocsToCollect <= numCollected) {
-          throw new EarlyTerminatingCollectorException
-            (numCollected, prevReaderCumulativeSize + (doc + 1));
+        if (maxDocsToCollect <= numCollected.incrementAndGet()) {
+          throw new EarlyTerminatingCollectorException(numCollected.get(), prevReaderCumulativeSize.get() + (doc + 1));
         }
       }
 
+      @Override
+      public void leafDone() throws IOException {
+        super.leafDone();
+        prevReaderCumulativeSize.addAndGet(maxDoc - 1);
+      }
     };
   }
 
   @Override
   public boolean isParallelizable() {
-    return false;
+    return true;
   }
 
 }
