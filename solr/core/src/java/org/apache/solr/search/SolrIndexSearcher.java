@@ -77,7 +77,6 @@ import org.apache.lucene.search.MultiCollector;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Scorer;
-import org.apache.lucene.search.SimpleCollector;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.TermQuery;
@@ -1596,40 +1595,15 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
 
     // handle zero case...
     if (lastDocRequested<=0) {
-      final float[] topscore = new float[] { Float.NEGATIVE_INFINITY };
-      final int[] numHits = new int[1];
+      final TotalHitCountCollector totalHitCountCollector = new TotalHitCountCollector();
+      final TopScoreCollector topScoreCollector = new TopScoreCollector();
 
       Collector collector;
 
       if (!needScores) {
-        collector = new SimpleCollector () {
-          @Override
-          public void collect(int doc) {
-            numHits[0]++;
-          }
-          @Override
-          public boolean acceptsDocsOutOfOrder() {
-            return true;
-          }
-        };
+        collector = totalHitCountCollector;
       } else {
-        collector = new SimpleCollector() {
-          Scorer scorer;
-          @Override
-          public void setScorer(Scorer scorer) {
-            this.scorer = scorer;
-          }
-          @Override
-          public void collect(int doc) throws IOException {
-            numHits[0]++;
-            float score = scorer.score();
-            if (score > topscore[0]) topscore[0]=score;            
-          }
-          @Override
-          public boolean acceptsDocsOutOfOrder() {
-            return true;
-          }
-        };
+        collector = MultiCollector.wrap(totalHitCountCollector, topScoreCollector);
       }
       
       buildAndRunCollectorChain(qr, query, luceneFilter, collector, cmd, pf.postFilter);
@@ -1637,8 +1611,8 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
       nDocsReturned=0;
       ids = new int[nDocsReturned];
       scores = new float[nDocsReturned];
-      totalHits = numHits[0];
-      maxScore = totalHits>0 ? topscore[0] : 0.0f;
+      totalHits = totalHitCountCollector.getTotalHits();
+      maxScore = totalHits>0 ? topScoreCollector.getTopScore() : 0.0f;
       // no docs on this page, so cursor doesn't change
       qr.setNextCursorMark(cmd.getCursorMark());
     } else {
@@ -1691,7 +1665,7 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
 
     // handle zero case...
     if (lastDocRequested<=0) {
-      final float[] topscore = new float[] { Float.NEGATIVE_INFINITY };
+      final TopScoreCollector topScoreCollector = new TopScoreCollector();
 
       Collector collector;
       final DocSetCollector setCollector = new DocSetCollector(smallSetSize, maxDoc);
@@ -1699,28 +1673,7 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
        if (!needScores) {
          collector = setCollector;
        } else {
-         final Collector topScoreCollector = new SimpleCollector() {
-          
-           Scorer scorer;
-           
-           @Override
-          public void setScorer(Scorer scorer) throws IOException {
-            this.scorer = scorer;
-          }
-           
-          @Override
-          public void collect(int doc) throws IOException {
-            float score = scorer.score();
-            if (score > topscore[0]) topscore[0] = score;
-          }
-          
-          @Override
-          public boolean acceptsDocsOutOfOrder() {
-            return true;
-          }
-        };
-        
-        collector = MultiCollector.wrap(setCollector, topScoreCollector);
+         collector = MultiCollector.wrap(setCollector, new TopScoreCollector());
        }
        
        buildAndRunCollectorChain(qr, query, luceneFilter, collector, cmd, pf.postFilter);
@@ -1731,7 +1684,7 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable,SolrIn
       ids = new int[nDocsReturned];
       scores = new float[nDocsReturned];
       totalHits = set.size();
-      maxScore = totalHits>0 ? topscore[0] : 0.0f;
+      maxScore = totalHits>0 ? topScoreCollector.getTopScore() : 0.0f;
       // no docs on this page, so cursor doesn't change
       qr.setNextCursorMark(cmd.getCursorMark());
     } else {
